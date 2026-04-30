@@ -1,0 +1,25 @@
+# macOS / editors
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# local env overrides
+.env
+.env.*
+!.env.example
+
+# logs
+*.log
+logs/
+
+# dumps / backups
+*.sql.gz
+*.dump
+*.bak
+backups/
+
+# local runtime artifacts
+.tmp/
+tmp/
