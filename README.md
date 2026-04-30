@@ -36,14 +36,11 @@ make db-migrate
 ## 팀 협업 규칙
 - 공유 브랜치/환경에 이미 적용된 마이그레이션 파일은 수정하지 않습니다.
 - 변경이 필요하면 새 버전 파일을 추가합니다.
-- 가능하면 마이그레이션 1개 파일은 1개 논리 변경만 담습니다.
-- 인덱스/제약조건 생성 시 재실행 안전성을 고려합니다.
 
 ## 현재 설정 참고
 - Flyway 설정:
   - `baselineOnMigrate=true`
   - `baselineVersion=1`
-- 기존 스키마가 Flyway 도입 전에 생성되어 있었기 때문에, 현재 `V1__init.sql`은 baseline으로 기록되어 재실행되지 않습니다.
 
 ## Makefile 상세 설명
 - `make db-up`
@@ -72,7 +69,7 @@ make db-migrate
 - `make db-reset`
   - `make db-re`의 별칭입니다.
 
-## 로컬 DB 완전 초기화 절차
+## 로컬 DB 꼬였을 때 초기화 절차
 ```bash
 make db-re
 make db-migrate
