@@ -1,85 +1,92 @@
 # DB 가이드
 
-## 개요
+## 1. 개요
 
 - 이 프로젝트의 DB 스키마 변경 관리는 Flyway로 수행합니다.
 - 마이그레이션 SQL 파일은 `db/migrations`에 둡니다.
-- PostgreSQL `docker-entrypoint-initdb.d` 방식으로 스키마를 만들지 않습니다.
 
-## 디렉토리 구조
+## 2. 디렉토리 구조
 
-- `db/migrations`: Flyway 버전 마이그레이션 SQL (`V...__...sql`)
 - `db/Dockerfile`: PostgreSQL 이미지 정의
+- `db/migrations`: Flyway 버전 마이그레이션 SQL (`V...__...sql`)
+  - 파일명 형식: `V{버전}__{설명}.sql`
+  - 현재 적재된 파일:
+    - `V1__init.sql` : 기본 스키마 설정
+    - `V2__law.sql` : 법률 스키마 설정
+    - `V3__roles_and_grants.sql`: 권한별 유저 생성
+    - `V4__seed_types.sql` : 카테고리 및 증빙 자료 기본 설정 insert
+    - `V5__seed_service_dummy_data.sql` : 더미데이터 insert
+    - ...
 
-## 로컬 개발 기본 순서
 
-1. DB 컨테이너 실행
+## 3. 로컬 개발 기본 순서
+
 ```bash
+
+# 0. 프로젝트 루트의 Makefile 활용
+
+# 1. DB 컨테이너 실행
 make db-up
-```
-2. 마이그레이션 상태 확인
-```bash
+
+# 2. 마이그레이션 상태 확인
 make db-migrate-info
-```
-3. 마이그레이션 적용
-```bash
+
+# 3. 마이그레이션 적용
 make db-migrate
-```
 
-## 마이그레이션 파일 규칙
-- 파일명 형식: `V{버전}__{설명}.sql`
-- 예시:
-  - `V1__init.sql`
-  - `V2__add_projects_index.sql`
-  - `V3__add_file_metadata.sql`
 
-## 팀 협업 규칙
-- 공유 브랜치/환경에 이미 적용된 마이그레이션 파일은 수정하지 않습니다.
-- 변경이 필요하면 새 버전 파일을 추가합니다.
-
-## 현재 설정 참고
-- Flyway 설정:
-  - `baselineOnMigrate=true`
-  - `baselineVersion=1`
-
-## Makefile 상세 설명
-- `make db-up`
-  - `postgres` 서비스를 백그라운드로 실행합니다.
-  - 실행 후 `.env`의 `POSTGRES_*` 값을 읽어 접속 정보를 출력합니다.
-- `make db-stop`
-  - DB 컨테이너만 중지합니다(데이터 볼륨 유지).
-- `make db-down`
-  - `db-stop` 후 DB 컨테이너를 제거합니다(데이터 볼륨 유지).
-- `make db-clean`
-  - 현재는 `db-down`과 동일한 동작입니다.
-- `make db-fclean`
-  - `db-clean` 후 `./volumes/db`를 삭제해 로컬 DB 데이터를 완전히 초기화합니다.
-  - 실행 전 확인 프롬프트가 있습니다.
-- `make db-re`
-  - `db-fclean` 후 `db-up`을 수행합니다.
-  - DB를 완전 초기화한 뒤 다시 띄울 때 사용합니다.
-- `make db-logs`
-  - DB 로그를 실시간으로 확인합니다.
-- `make db-migrate-info`
-  - Flyway `info`를 실행해 현재 스키마 버전/상태를 확인합니다.
-- `make db-migrate`
-  - Flyway `migrate`를 실행해 신규 마이그레이션을 적용합니다.
-- `make db`
-  - `make db-up`의 별칭입니다.
-- `make db-reset`
-  - `make db-re`의 별칭입니다.
-
-## 로컬 DB 꼬였을 때 초기화 절차
-```bash
+# 4. 만약 로컬 DB 꼬였을 때 초기화 절차
 make db-re
 make db-migrate
 ```
 
-## 자주 쓰는 명령어
+## 4. DBeaver 접속
+
+1. DB 실행
 ```bash
 make db-up
-make db-migrate-info
-make db-migrate
-make db-logs
-make db-stop
 ```
+
+2. DBeaver에서 새 연결 생성
+- Database: `PostgreSQL`
+- Host: `localhost` (=`POSTGRES_HOST`)
+- Port: `5432` (=`POSTGRES_PORT`)
+- Database: `safety` (=`POSTGRES_DB`)
+- Username: `safety_user` (=`POSTGRES_USER`)
+- Password: `safety_password` (=`POSTGRES_PASSWORD`)
+
+3. 연결 테스트
+- DBeaver의 `Test Connection` 클릭 후 `Finish`
+- 실패하면 먼저 `make db-logs`로 DB 상태 확인
+
+4. 앱 계정으로도 접속 가능
+- 서비스 스키마 확인용: `SERVICE_APP_USER` / `SERVICE_APP_PASSWORD`
+- 법률 스키마 확인용: `LAW_APP_USER` / `LAW_APP_PASSWORD`
+- 관리자 확인용: `DEV_ADMIN_USER` / `DEV_ADMIN_PASSWORD`
+
+## 5. 기타 사항 정리
+
+### 5.1. 유저 권한 한눈에 보기
+
+- 앱 계정 (총 3개)
+  - `${SERVICE_APP_USER}`: `service` 스키마 전용
+  - `${LAW_APP_USER}`: `legal_rag` 스키마 전용
+  - `${DEV_ADMIN_USER}`: 로컬 개발용 관리자 계정(`SUPERUSER`)
+- 두 계정 모두 자기 스키마에서는 CRUD(`SELECT/INSERT/UPDATE/DELETE`) 가능합니다.
+- 서로의 스키마는 접근 못 하게 막혀있습니다.
+- 새로 만드는 테이블/시퀀스에도 같은 권한이 자동 적용됩니다(`ALTER DEFAULT PRIVILEGES`).
+- `dev_admin`도 하드코딩이 아니라 `.env`(`DEV_ADMIN_USER`, `DEV_ADMIN_PASSWORD`)로 관리합니다.
+
+### 5.2. 참고할 점
+
+- 변경은 새 마이그레이션 파일로 추가
+- 계정명/비밀번호는 `.env` 값(`SERVICE_APP_USER`, `LAW_APP_USER`, `DEV_ADMIN_USER` 등)으로 관리
+- DB 권한 문제 의심 시 확인 순서:
+  1. `make db-migrate-info`
+  2. `make db-migrate`
+  3. 필요한 경우 `make db-re` 후 `make db-migrate`
+
+### 5.3. 현재 설정 참고
+- Flyway 설정:
+  - `baselineOnMigrate=true`
+  - `baselineVersion=1`

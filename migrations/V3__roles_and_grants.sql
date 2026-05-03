@@ -28,22 +28,18 @@ BEGIN
         );
     END IF;
 
-    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'dev_admin') THEN
-        CREATE ROLE dev_admin
-            LOGIN
-            PASSWORD 'dev_admin'
-            SUPERUSER
-            CREATEDB
-            CREATEROLE
-            INHERIT;
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${DEV_ADMIN_USER}') THEN
+        EXECUTE format(
+            'CREATE ROLE %I LOGIN PASSWORD %L SUPERUSER CREATEDB CREATEROLE INHERIT',
+            '${DEV_ADMIN_USER}',
+            '${DEV_ADMIN_PASSWORD}'
+        );
     ELSE
-        ALTER ROLE dev_admin WITH
-            LOGIN
-            PASSWORD 'dev_admin'
-            SUPERUSER
-            CREATEDB
-            CREATEROLE
-            INHERIT;
+        EXECUTE format(
+            'ALTER ROLE %I WITH LOGIN PASSWORD %L SUPERUSER CREATEDB CREATEROLE INHERIT',
+            '${DEV_ADMIN_USER}',
+            '${DEV_ADMIN_PASSWORD}'
+        );
     END IF;
 END
 $$;
