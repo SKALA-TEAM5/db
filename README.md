@@ -15,7 +15,7 @@
     - `V2__law.sql` : 법률 스키마 설정
     - `V3__roles_and_grants.sql`: 권한별 유저 생성
     - `V4__seed_types.sql` : 카테고리 및 증빙 자료 기본 설정 insert
-    - `V5__seed_service_dummy_data.sql` : 더미데이터 insert
+    - ~~`V5__seed_service_dummy_data.sql` : 더미데이터 insert~~
     - ...
 
 

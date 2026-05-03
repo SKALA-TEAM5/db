@@ -13,7 +13,8 @@ CREATE TABLE users (
     role_code VARCHAR(30) NOT NULL DEFAULT 'user',
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CONSTRAINT uq_users_employee_no UNIQUE (employee_no)
+    CONSTRAINT uq_users_employee_no UNIQUE (employee_no),
+    CONSTRAINT chk_users_role_code CHECK (role_code IN ('admin', 'user', 'agent'))
 );
 
 CREATE TABLE usage_categories (
@@ -32,6 +33,7 @@ CREATE TABLE evidence_types (
 CREATE TABLE projects (
     id BIGSERIAL PRIMARY KEY,
     user_id BIGINT NOT NULL,
+    contract_no VARCHAR(100),
     construction_company VARCHAR(200) NOT NULL,
     project_name VARCHAR(300) NOT NULL,
     site_location VARCHAR(500) NOT NULL,
@@ -72,7 +74,6 @@ CREATE TABLE usage_statements (
     report_month DATE NOT NULL,
     revision_no INTEGER NOT NULL DEFAULT 1,
     document_written_date DATE NOT NULL,
-    statement_status_code VARCHAR(30) NOT NULL,
     cumulative_progress_rate NUMERIC(5, 2) NOT NULL DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -80,7 +81,6 @@ CREATE TABLE usage_statements (
     CONSTRAINT uq_usage_statements_project_month_revision UNIQUE (project_id, report_month, revision_no),
     CONSTRAINT chk_usage_statements_revision_no_positive CHECK (revision_no >= 1),
     CONSTRAINT chk_usage_statements_report_month_first_day CHECK (report_month = date_trunc('month', report_month)::date),
-    CONSTRAINT chk_usage_statements_status_code CHECK (statement_status_code IN ('draft', 'reviewing', 'confirmed')),
     CONSTRAINT chk_usage_statements_progress_rate CHECK (cumulative_progress_rate BETWEEN 0 AND 100)
 );
 
@@ -279,13 +279,14 @@ ALTER TABLE action_requests
 -- Foreign-key and common list-query indexes
 CREATE INDEX idx_projects_user_status ON projects (user_id, project_status_code);
 CREATE INDEX idx_projects_created_at ON projects (created_at DESC);
+CREATE INDEX idx_projects_contract_no ON projects (contract_no);
 
 CREATE INDEX idx_files_project_uploaded_at ON files (project_id, uploaded_at DESC);
 CREATE INDEX idx_files_uploaded_by_user_id ON files (uploaded_by_user_id);
 CREATE INDEX idx_files_uploaded_evidence_type_uploaded_at ON files (uploaded_evidence_type_code, uploaded_at DESC);
 CREATE INDEX idx_files_captured_at ON files (captured_at) WHERE captured_at IS NOT NULL;
 
-CREATE INDEX idx_usage_statements_project_status ON usage_statements (project_id, statement_status_code);
+CREATE INDEX idx_usage_statements_project_id ON usage_statements (project_id);
 CREATE INDEX idx_usage_statements_report_month ON usage_statements (report_month DESC);
 
 CREATE INDEX idx_usage_statement_summaries_category_code ON usage_statement_summaries (category_code);
@@ -412,7 +413,6 @@ COMMENT ON COLUMN usage_statements.source_file_id IS '원본PDF파일ID';
 COMMENT ON COLUMN usage_statements.report_month IS '보고월 (해당월 1일로 저장)';
 COMMENT ON COLUMN usage_statements.revision_no IS '개정번호';
 COMMENT ON COLUMN usage_statements.document_written_date IS '문서작성일';
-COMMENT ON COLUMN usage_statements.statement_status_code IS '내역서업무진행상태 (draft/reviewing/confirmed)';
 COMMENT ON COLUMN usage_statements.cumulative_progress_rate IS '누계공정률';
 COMMENT ON COLUMN usage_statements.created_at IS '생성일시';
 COMMENT ON COLUMN usage_statements.updated_at IS '수정일시';
