@@ -1,16 +1,26 @@
 -- =============================================================
--- V5__seed_scenario.sql
--- 시나리오 목업 데이터 시드
+-- V6__mockup.sql
+-- 개발 로그인 계정 + 시나리오 목업 데이터 시드
 -- 프로젝트: 동탄(조치요청) / 평택(보고서작성중) / 광명(업로드대기)
 -- =============================================================
 SET LOCAL search_path TO service, public;
 
 -- ─────────────────────────────────────────────────────────────
 -- 1. 사용자
---    role_code: 'user'  = 프로젝트 담당자
---               'admin' = SHE 담당자
+--    SYS-001 기본 비밀번호: P@ssw0rd123!
+--    ADMIN-* 기본 비밀번호: Admin1234!
+--    USER-* 기본 비밀번호: User1234!
 -- ─────────────────────────────────────────────────────────────
 INSERT INTO users (employee_no, real_name, password_hash, role_code) VALUES
+    -- 시스템 관리자
+    ('SYS-001', '시스템관리자', '$2y$12$joImXqDiNtrBwXV6wbDo8uoEsKzYfQjD4n6flnTzs8vR6vg9cfV6m', 'system_admin'),
+    -- 개발 로그인 계정
+    ('ADMIN-001', '김서연', '$2y$12$fu40qSD1PjbzuaBTuhs4LONH3xgoXCNimu8Q/9b.OknMpRBruyQDu', 'admin'),
+    ('ADMIN-002', '박민준', '$2y$12$fu40qSD1PjbzuaBTuhs4LONH3xgoXCNimu8Q/9b.OknMpRBruyQDu', 'admin'),
+    ('USER-001', '이현우', '$2y$12$GvLF2ME1SyQh/UCcMBzb.Ogv2dTpsx8BqsWxQJbIekauTDauICKj2', 'user'),
+    ('USER-002', '최지훈', '$2y$12$GvLF2ME1SyQh/UCcMBzb.Ogv2dTpsx8BqsWxQJbIekauTDauICKj2', 'user'),
+    ('USER-003', '정유진', '$2y$12$GvLF2ME1SyQh/UCcMBzb.Ogv2dTpsx8BqsWxQJbIekauTDauICKj2', 'user'),
+    ('USER-004', '한도윤', '$2y$12$GvLF2ME1SyQh/UCcMBzb.Ogv2dTpsx8BqsWxQJbIekauTDauICKj2', 'user'),
     -- SHE 담당자
     ('SHE-001', '홍길동',  '$2b$12$placeholder_hash_hong',   'admin'),
     ('SHE-002', '최안전',  '$2b$12$placeholder_hash_choi',   'admin'),
@@ -23,20 +33,23 @@ INSERT INTO users (employee_no, real_name, password_hash, role_code) VALUES
     -- 프로젝트 담당자 (광명)
     ('USR-301', '이프로',  '$2b$12$placeholder_hash_lee_p',  'user'),
     ('USR-302', '정현장',  '$2b$12$placeholder_hash_jung',   'user')
-ON CONFLICT (employee_no) DO NOTHING;
+ON CONFLICT (employee_no) DO UPDATE
+SET
+    real_name = EXCLUDED.real_name,
+    password_hash = EXCLUDED.password_hash,
+    role_code = EXCLUDED.role_code;
 
 -- ─────────────────────────────────────────────────────────────
 -- 2. 프로젝트
 -- ─────────────────────────────────────────────────────────────
 INSERT INTO projects (
-    user_id, contract_no, construction_company, project_name,
+    contract_no, construction_company, project_name,
     site_location, representative_name, contract_amount,
     construction_start_date, construction_end_date,
     client_name, appropriated_amount, project_status_code
 ) VALUES
     -- 동탄 물류센터 (조치 요청)
     (
-        (SELECT id FROM users WHERE employee_no = 'USR-101'),
         '2024-0042', '스칼라건설', '동탄 물류센터 증축공사',
         '경기도 화성시 동탄물류단지', '정대표', 12000000000,
         '2024-10-23', '2025-06-21',
@@ -44,7 +57,6 @@ INSERT INTO projects (
     ),
     -- 평택 제조시설 (보고서 작성 중)
     (
-        (SELECT id FROM users WHERE employee_no = 'USR-201'),
         '2024-0108', '평택산업개발', '평택 제조시설 증설',
         '경기도 평택시 고덕산업단지', '강대표', 8500000000,
         '2023-06-01', '2024-12-31',
@@ -52,13 +64,19 @@ INSERT INTO projects (
     ),
     -- 광명 데이터센터 (업로드 대기)
     (
-        (SELECT id FROM users WHERE employee_no = 'USR-301'),
         '2025-0016', '광명디씨건설', '광명 데이터센터 신축',
         '경기도 광명시 첨단산업지구', '문대표', 15700000000,
         '2025-02-01', '2026-08-31',
         '광명데이터센터', 15700000000, 'active'
     )
 ON CONFLICT DO NOTHING;
+
+INSERT INTO project_user_assignments (project_id, user_id, assigned_by_user_id)
+VALUES
+    ((SELECT id FROM projects WHERE contract_no = '2024-0042'), (SELECT id FROM users WHERE employee_no = 'USR-101'), (SELECT id FROM users WHERE employee_no = 'ADMIN-001')),
+    ((SELECT id FROM projects WHERE contract_no = '2024-0108'), (SELECT id FROM users WHERE employee_no = 'USR-201'), (SELECT id FROM users WHERE employee_no = 'ADMIN-001')),
+    ((SELECT id FROM projects WHERE contract_no = '2025-0016'), (SELECT id FROM users WHERE employee_no = 'USR-301'), (SELECT id FROM users WHERE employee_no = 'ADMIN-001'))
+ON CONFLICT (project_id, user_id) DO NOTHING;
 
 -- 편의 변수: 프로젝트 ID 를 서브쿼리로 참조
 -- ─────────────────────────────────────────────────────────────
