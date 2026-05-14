@@ -67,38 +67,3 @@ REVOKE ALL ON SCHEMA legal_rag FROM ${SERVICE_APP_USER};
 REVOKE ALL ON SCHEMA service FROM ${LAW_APP_USER};
 
 SET LOCAL search_path TO service, public;
-
--- Session context helpers for RLS checks.
--- The application must set app.user_id / app.role per request.
-CREATE OR REPLACE FUNCTION service.current_app_user_id()
-RETURNS BIGINT
-LANGUAGE sql
-STABLE
-AS $$
-    SELECT CASE
-        WHEN current_setting('app.user_id', true) ~ '^[0-9]+$'
-            THEN current_setting('app.user_id', true)::BIGINT
-        ELSE NULL
-    END
-$$;
-
-CREATE OR REPLACE FUNCTION service.current_app_role()
-RETURNS TEXT
-LANGUAGE sql
-STABLE
-AS $$
-    SELECT COALESCE(NULLIF(current_setting('app.role', true), ''), 'anonymous')
-$$;
-
-ALTER TABLE service.projects ENABLE ROW LEVEL SECURITY;
-ALTER TABLE service.projects FORCE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS p_projects_select_by_role ON service.projects;
-
-CREATE POLICY p_projects_select_by_role
-ON service.projects
-FOR SELECT
-USING (
-    service.current_app_role() IN ('admin', 'agent')
-    OR user_id = service.current_app_user_id()
-);
