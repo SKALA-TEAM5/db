@@ -89,10 +89,12 @@ CREATE TABLE files (
     size_bytes BIGINT NOT NULL,
     captured_at TIMESTAMPTZ,
     uploaded_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    status_code VARCHAR(20) NOT NULL DEFAULT 'pending',
     deleted_at TIMESTAMPTZ,
     deleted_by_user_id BIGINT,
     CONSTRAINT uq_files_storage_key UNIQUE (storage_key),
-    CONSTRAINT chk_files_size_bytes_non_negative CHECK (size_bytes >= 0)
+    CONSTRAINT chk_files_size_bytes_non_negative CHECK (size_bytes >= 0),
+    CONSTRAINT chk_files_status_code CHECK (status_code IN ('pending', 'matched', 'unmatched'))
 );
 
 CREATE TABLE usage_statements (

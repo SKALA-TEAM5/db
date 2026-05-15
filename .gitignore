@@ -23,3 +23,5 @@ backups/
 # local runtime artifacts
 .tmp/
 tmp/
+
+docs/
