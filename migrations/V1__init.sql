@@ -172,19 +172,17 @@ CREATE TABLE evidence_requirements (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE TABLE validation_logs (
+CREATE TABLE agent_logs (
     id BIGSERIAL PRIMARY KEY,
     project_id BIGINT NOT NULL,
     usage_statement_id BIGINT,
-    usage_statement_item_id BIGINT,
-    validation_type_code VARCHAR(50) NOT NULL,
-    result_code VARCHAR(30),
-    agent_type_code VARCHAR(50),
-    log_type_code VARCHAR(50),
-    severity_code VARCHAR(30) NOT NULL DEFAULT 'info',
+    agent_type_code VARCHAR(20) NOT NULL,
+    status_code VARCHAR(20) NOT NULL DEFAULT 'running',
     details JSONB,
     model_name VARCHAR(100),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT chk_agent_logs_agent_type_code CHECK (agent_type_code IN ('classi', 'safety-doc', 'link', 'vision', 'legal', 'report')),
+    CONSTRAINT chk_agent_logs_status_code CHECK (status_code IN ('running', 'completed', 'failed'))
 );
 
 CREATE TABLE action_requests (
@@ -279,17 +277,14 @@ ALTER TABLE evidence_requirements
     ADD CONSTRAINT fk_evidence_requirements_evidence_type_code
     FOREIGN KEY (evidence_type_code) REFERENCES evidence_types (code);
 
-ALTER TABLE validation_logs
-    ADD CONSTRAINT fk_validation_logs_project_id
+ALTER TABLE agent_logs
+    ADD CONSTRAINT fk_agent_logs_project_id
     FOREIGN KEY (project_id) REFERENCES projects (id);
 
-ALTER TABLE validation_logs
-    ADD CONSTRAINT fk_validation_logs_usage_statement_id
+ALTER TABLE agent_logs
+    ADD CONSTRAINT fk_agent_logs_usage_statement_id
     FOREIGN KEY (usage_statement_id) REFERENCES usage_statements (id);
 
-ALTER TABLE validation_logs
-    ADD CONSTRAINT fk_validation_logs_usage_statement_item_id
-    FOREIGN KEY (usage_statement_item_id) REFERENCES usage_statement_items (id);
 
 ALTER TABLE action_requests
     ADD CONSTRAINT fk_action_requests_project_id
@@ -358,13 +353,11 @@ CREATE INDEX idx_evidence_requirements_active_unsatisfied
 
 CREATE INDEX idx_evidence_requirements_evidence_type_code ON evidence_requirements (evidence_type_code);
 
-CREATE INDEX idx_validation_logs_project_created_at ON validation_logs (project_id, created_at DESC);
-CREATE INDEX idx_validation_logs_statement_created_at ON validation_logs (usage_statement_id, created_at DESC)
+CREATE INDEX idx_agent_logs_project_created_at ON agent_logs (project_id, created_at DESC);
+CREATE INDEX idx_agent_logs_statement_created_at ON agent_logs (usage_statement_id, created_at DESC)
     WHERE usage_statement_id IS NOT NULL;
-CREATE INDEX idx_validation_logs_item_created_at ON validation_logs (usage_statement_item_id, created_at DESC)
-    WHERE usage_statement_item_id IS NOT NULL;
-CREATE INDEX idx_validation_logs_type_result_created_at ON validation_logs (validation_type_code, result_code, created_at DESC);
-CREATE INDEX idx_validation_logs_details_gin ON validation_logs USING GIN (details);
+CREATE INDEX idx_agent_logs_type_status_created_at ON agent_logs (agent_type_code, status_code, created_at DESC);
+CREATE INDEX idx_agent_logs_details_gin ON agent_logs USING GIN (details);
 
 CREATE INDEX idx_action_requests_project_status ON action_requests (project_id, status_code);
 CREATE INDEX idx_action_requests_assignee_status ON action_requests (assignee_user_id, status_code) WHERE assignee_user_id IS NOT NULL;
@@ -499,14 +492,11 @@ COMMENT ON COLUMN evidence_types.code IS '증빙유형코드 (receipt / site_pho
 COMMENT ON COLUMN evidence_types.name IS '증빙유형명';
 COMMENT ON COLUMN evidence_types.description IS '설명';
 
-COMMENT ON COLUMN validation_logs.id IS '검증로그ID';
-COMMENT ON COLUMN validation_logs.validation_type_code IS 'AI 작업 유형 (category_classification / evidence_requirement_generation / human_review 등)';
-COMMENT ON COLUMN validation_logs.result_code IS '작업 결과 (confirmed / ai_changed / success / pass 등)';
-COMMENT ON COLUMN validation_logs.agent_type_code IS '실행한 에이전트 유형 (classifier_agent / safety_doc_agent 등)';
-COMMENT ON COLUMN validation_logs.log_type_code IS '로그 세부 유형';
-COMMENT ON COLUMN validation_logs.severity_code IS '심각도 (info / warning / error)';
-COMMENT ON COLUMN validation_logs.details IS '유형별 상세 데이터 (JSONB)';
-COMMENT ON COLUMN validation_logs.model_name IS '사용된 AI 모델명';
+COMMENT ON COLUMN agent_logs.id IS 'agent 로그 ID';
+COMMENT ON COLUMN agent_logs.agent_type_code IS '실행한 에이전트 코드 (classi / safety-doc / link / vision / legal / report)';
+COMMENT ON COLUMN agent_logs.status_code IS '실행 상태 (running / completed / failed)';
+COMMENT ON COLUMN agent_logs.details IS '에이전트 결과 및 상세 데이터 (JSONB)';
+COMMENT ON COLUMN agent_logs.model_name IS '사용된 AI 모델명';
 
 COMMENT ON COLUMN action_requests.id IS '액션요청ID';
 COMMENT ON COLUMN action_requests.project_id IS '프로젝트ID';

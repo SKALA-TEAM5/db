@@ -484,51 +484,26 @@ WHERE us.project_id = (SELECT id FROM projects WHERE contract_no = '2024-0042')
 -- ─────────────────────────────────────────────────────────────
 -- 9. 검증 로그 (동탄)
 -- ─────────────────────────────────────────────────────────────
-INSERT INTO validation_logs (
-    project_id, usage_statement_id, usage_statement_item_id,
-    validation_type_code, result_code, details, model_name, created_at
+INSERT INTO agent_logs (
+    project_id, usage_statement_id,
+    agent_type_code, status_code, details, model_name, created_at
 )
 SELECT
     us.project_id,
     us.id,
-    item.id,
-    vd.validation_type_code,
-    vd.result_code,
+    vd.agent_type_code,
+    'completed',
     vd.details::JSONB,
     'claude-sonnet-4-20250514',
     '2026-04-23 11:00:00+09'
 FROM usage_statements us
-JOIN usage_statement_items item ON item.usage_statement_id = us.id
 CROSS JOIN (VALUES
-    -- CAT_03 안전모: 비전 검증 실패
-    ('CAT_03', '안전모 구입',
-     'vision',   'pass',
-     '{"issue":"안전모 턱끈 미체결 또는 지급대장 인원 불일치","severity":"high","detail":"사진 속 작업자 일부가 턱끈을 체결하지 않음. 지급대장 10명 vs 사진 속 7명"}'),
-    -- CAT_03 안전화: 비전 검증 실패
-    ('CAT_03', '안전화 구입',
-     'vision',   'pass',
-     '{"issue":"안전화 실제 착용 사진 부족","severity":"high","detail":"지급 장면만 있고 작업 중 착용 사진 없음"}'),
-    -- CAT_03 안전벨트: 비전 검증 실패
-    ('CAT_03', '안전벨트 구입',
-     'vision',   'pass',
-     '{"issue":"안전벨트 체결 부위 미확인","severity":"high","detail":"착용자는 식별되나 체결 부위가 가려져 적정성 판단 불가"}'),
-    -- CAT_03 금액 불일치
-    ('CAT_03', '안전모 구입',
-     'ocr',      'pass',
-     '{"issue":"사용내역서 금액과 영수증 합계 불일치","severity":"high","statement_amount":1200000,"receipt_total":980000,"difference":220000}'),
-    -- CAT_02 안전난간: 조건부 인정
-    ('CAT_02', '안전난간 설치 부품 구매',
-     'vision',   'pass',
-     '{"issue":"설치 위치 특정 사진 부족","severity":"medium","detail":"부품 구매 영수증 존재하나 설치 전후 비교 사진 없음"}'),
-    -- CAT_07 한도 초과
-    ('CAT_07', '본사 전담조직 안전담당자 임금',
-     'law',      'pass',
-     '{"issue":"본사 전담조직 사용비 계상 한도 초과","severity":"high","limit_rate":0.06,"claimed_amount":4800000}')
-) AS vd(category_code, item_name, validation_type_code, result_code, details)
+    ('vision',  '{"result":"issues_found","issues":[{"item":"안전모 구입","issue":"턱끈 미체결, 지급대장 불일치"},{"item":"안전화 구입","issue":"착용 사진 부족"},{"item":"안전벨트 구입","issue":"체결 부위 미확인"},{"item":"안전난간 설치 부품 구매","issue":"설치 위치 사진 부족"}]}'),
+    ('classi',  '{"result":"issues_found","issues":[{"item":"안전모 구입","issue":"금액 불일치","statement_amount":1200000,"receipt_total":980000,"difference":220000}]}'),
+    ('legal',   '{"result":"issues_found","issues":[{"item":"본사 전담조직 안전담당자 임금","issue":"한도 초과","limit_rate":0.06,"claimed_amount":4800000}]}')
+) AS vd(agent_type_code, details)
 WHERE us.project_id = (SELECT id FROM projects WHERE contract_no = '2024-0042')
-  AND us.report_month = '2026-04-01'
-  AND item.category_code = vd.category_code
-  AND item.item_name     = vd.item_name;
+  AND us.report_month = '2026-04-01';
 
 -- ─────────────────────────────────────────────────────────────
 -- 10. 조치 요청 (동탄)
@@ -779,24 +754,24 @@ WHERE us.project_id = (SELECT id FROM projects WHERE contract_no = '2024-0108')
 -- ─────────────────────────────────────────────────────────────
 -- 16. 검증 로그 (평택 - 정상)
 -- ─────────────────────────────────────────────────────────────
-INSERT INTO validation_logs (
+INSERT INTO agent_logs (
     project_id, usage_statement_id,
-    validation_type_code, result_code, details, model_name, created_at
+    agent_type_code, status_code, details, model_name, created_at
 )
 SELECT
     us.project_id,
     us.id,
-    vd.validation_type_code,
-    'pass',
+    vd.agent_type_code,
+    'completed',
     vd.details::JSONB,
     'claude-sonnet-4-20250514',
     '2026-04-21 14:00:00+09'
 FROM usage_statements us
 CROSS JOIN (VALUES
-    ('ocr',    '{"summary":"사용내역서 금액과 영수증 합계 일치","total_statement":4920000,"total_receipts":4920000}'),
-    ('vision', '{"summary":"보건관리자 현장 방문 및 활동 사진 목적 적합성 확인"}'),
-    ('law',    '{"summary":"모든 항목 법령 기준 내 정산 적합"}')
-) AS vd(validation_type_code, details)
+    ('classi', '{"result":"pass","summary":"사용내역서 금액과 영수증 합계 일치","total_statement":4920000,"total_receipts":4920000}'),
+    ('vision', '{"result":"pass","summary":"보건관리자 현장 방문 및 활동 사진 목적 적합성 확인"}'),
+    ('legal',  '{"result":"pass","summary":"모든 항목 법령 기준 내 정산 적합"}')
+) AS vd(agent_type_code, details)
 WHERE us.project_id = (SELECT id FROM projects WHERE contract_no = '2024-0108')
   AND us.report_month = '2026-04-01';
 
@@ -879,16 +854,16 @@ WHERE us.project_id = (SELECT id FROM projects WHERE contract_no = '2025-0016')
 -- ─────────────────────────────────────────────────────────────
 -- 20. 검증 로그 (광명 3월 - 이슈 1건 검증 중)
 -- ─────────────────────────────────────────────────────────────
-INSERT INTO validation_logs (
+INSERT INTO agent_logs (
     project_id, usage_statement_id,
-    validation_type_code, result_code, details, model_name, created_at
+    agent_type_code, status_code, details, model_name, created_at
 )
 SELECT
     us.project_id,
     us.id,
-    'ocr',
-    'conditional',
-    '{"issue":"일부 영수증 금액 OCR 인식 오류 - 수동 확인 필요","affected_items":1}'::JSONB,
+    'classi',
+    'completed',
+    '{"result":"conditional","issue":"일부 영수증 금액 OCR 인식 오류 - 수동 확인 필요","affected_items":1}'::JSONB,
     'claude-sonnet-4-20250514',
     '2026-03-20 10:00:00+09'
 FROM usage_statements us
