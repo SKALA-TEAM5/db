@@ -80,6 +80,12 @@ LEFT JOIN (
 
 -- classifier_agent / validator_agent / OCR matching 공용
 -- usage_statement_id 하나로 프로젝트 기본정보 + 상세항목 전부 조회
+--
+-- usage_statement_items를 LEFT JOIN으로 처리하는 이유:
+-- FastAPI가 OCR → classifier → items INSERT 순서로 동작하므로
+-- classifier가 이 뷰를 읽는 시점에 items가 아직 존재하지 않는다.
+-- INNER JOIN이면 프로젝트 기본정보도 사라지므로 LEFT JOIN이 필수.
+-- items가 없으면 item 관련 컬럼은 NULL로 반환된다.
 CREATE OR REPLACE VIEW service.v_usage_statement_context AS
 SELECT
     us.id                       AS usage_statement_id,
@@ -108,7 +114,7 @@ SELECT
 FROM service.usage_statements us
 JOIN service.projects p
   ON p.id = us.project_id
-JOIN service.usage_statement_items usi
+LEFT JOIN service.usage_statement_items usi
   ON usi.usage_statement_id = us.id
 LEFT JOIN service.usage_categories uc
   ON uc.code = usi.category_code;
