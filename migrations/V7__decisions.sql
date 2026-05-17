@@ -25,12 +25,12 @@ COMMENT ON COLUMN agent_logs.run_id IS '유효성 검증 배치 실행 단위 ID
 --              (vision: 안전시설 미확인·부족 / link: 금액·품목 불일치)
 -- ─────────────────────────────────────────────────────────────
 
+ALTER TABLE files
+    DROP CONSTRAINT chk_files_status_code;
+
 UPDATE files
     SET status_code = 'draft'
     WHERE status_code = 'uploaded';
-
-ALTER TABLE files
-    DROP CONSTRAINT chk_files_status_code;
 
 ALTER TABLE files
     ADD CONSTRAINT chk_files_status_code
