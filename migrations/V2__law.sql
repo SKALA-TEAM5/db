@@ -209,7 +209,7 @@ CREATE TABLE IF NOT EXISTS legal_rules (
         ON DELETE RESTRICT,
 
     CONSTRAINT chk_legal_rules_rule_type
-        CHECK (rule_type IN ('allowed', 'disallowed', 'limit', 'progress', 'qa')),
+        CHECK (rule_type IN ('allowed', 'disallowed', 'limit', 'progress', 'qa', 'category')),
 
     CONSTRAINT chk_legal_rules_category_number
         CHECK (category_number IS NULL OR category_number BETWEEN 1 AND 9),
@@ -353,7 +353,7 @@ CREATE TABLE IF NOT EXISTS legal_rule_master (
         CHECK (content_type IS NULL OR content_type IN ('article', 'appendix', 'qa', 'guideline')),
 
     CONSTRAINT chk_legal_rule_master_rule_type
-        CHECK (rule_type IS NULL OR rule_type IN ('allowed', 'disallowed', 'limit', 'progress', 'qa')),
+        CHECK (rule_type IS NULL OR rule_type IN ('allowed', 'disallowed', 'limit', 'progress', 'qa', 'category')),
 
     CONSTRAINT chk_legal_rule_master_profile_scope
         CHECK (profile_scope IS NULL OR profile_scope IN ('category', 'global', 'item')),
