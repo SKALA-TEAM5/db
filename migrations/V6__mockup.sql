@@ -386,11 +386,10 @@ WHERE us.project_id = (SELECT id FROM projects WHERE contract_no = '2024-0042')
 -- ─────────────────────────────────────────────────────────────
 
 -- CAT_01 안전관리자 임금 ↔ 관련 파일
-INSERT INTO evidence_file_links (usage_statement_item_id, file_id, category_code, evidence_type_code)
+INSERT INTO evidence_file_links (usage_statement_item_id, file_id, evidence_type_code)
 SELECT
     item.id,
     f.id,
-    'CAT_01',
     f.uploaded_evidence_type_code
 FROM usage_statement_items item
 JOIN usage_statements us ON item.usage_statement_id = us.id
@@ -407,11 +406,10 @@ WHERE us.project_id = (SELECT id FROM projects WHERE contract_no = '2024-0042')
   );
 
 -- CAT_03 안전모 구입 ↔ 관련 파일
-INSERT INTO evidence_file_links (usage_statement_item_id, file_id, category_code, evidence_type_code)
+INSERT INTO evidence_file_links (usage_statement_item_id, file_id, evidence_type_code)
 SELECT
     item.id,
     f.id,
-    'CAT_03',
     f.uploaded_evidence_type_code
 FROM usage_statement_items item
 JOIN usage_statements us ON item.usage_statement_id = us.id
@@ -422,11 +420,10 @@ WHERE us.project_id = (SELECT id FROM projects WHERE contract_no = '2024-0042')
   AND f.original_filename IN ('안전모_구입_영수증.jpg', '안전모_착용_현장.jpg');
 
 -- CAT_03 안전화 구입 ↔ 관련 파일
-INSERT INTO evidence_file_links (usage_statement_item_id, file_id, category_code, evidence_type_code)
+INSERT INTO evidence_file_links (usage_statement_item_id, file_id, evidence_type_code)
 SELECT
     item.id,
     f.id,
-    'CAT_03',
     f.uploaded_evidence_type_code
 FROM usage_statement_items item
 JOIN usage_statements us ON item.usage_statement_id = us.id
@@ -437,11 +434,10 @@ WHERE us.project_id = (SELECT id FROM projects WHERE contract_no = '2024-0042')
   AND f.original_filename IN ('안전화_구입_영수증.jpg', '안전화_지급_사진.jpg');
 
 -- CAT_03 안전벨트 구입 ↔ 관련 파일
-INSERT INTO evidence_file_links (usage_statement_item_id, file_id, category_code, evidence_type_code)
+INSERT INTO evidence_file_links (usage_statement_item_id, file_id, evidence_type_code)
 SELECT
     item.id,
     f.id,
-    'CAT_03',
     f.uploaded_evidence_type_code
 FROM usage_statement_items item
 JOIN usage_statements us ON item.usage_statement_id = us.id

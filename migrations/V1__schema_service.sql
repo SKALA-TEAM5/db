@@ -89,12 +89,12 @@ CREATE TABLE files (
     size_bytes BIGINT NOT NULL,
     captured_at TIMESTAMPTZ,
     uploaded_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    status_code VARCHAR(20) NOT NULL DEFAULT 'uploaded',
+    status_code VARCHAR(20) NOT NULL DEFAULT 'draft',
     deleted_at TIMESTAMPTZ,
     deleted_by_user_id BIGINT,
     CONSTRAINT uq_files_storage_key UNIQUE (storage_key),
     CONSTRAINT chk_files_size_bytes_non_negative CHECK (size_bytes >= 0),
-    CONSTRAINT chk_files_status_code CHECK (status_code IN ('uploaded', 'pending', 'matched', 'unmatched'))
+    CONSTRAINT chk_files_status_code CHECK (status_code IN ('draft', 'matched', 'unmatched'))
 );
 
 CREATE TABLE usage_statements (
@@ -105,13 +105,15 @@ CREATE TABLE usage_statements (
     revision_no INTEGER NOT NULL DEFAULT 1,
     document_written_date DATE NOT NULL,
     cumulative_progress_rate NUMERIC(5, 2) NOT NULL DEFAULT 0,
+    status_code VARCHAR(30) NOT NULL DEFAULT 'draft',
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT uq_usage_statements_source_file_id UNIQUE (source_file_id),
     CONSTRAINT uq_usage_statements_project_month_revision UNIQUE (project_id, report_month, revision_no),
     CONSTRAINT chk_usage_statements_revision_no_positive CHECK (revision_no >= 1),
     CONSTRAINT chk_usage_statements_report_month_first_day CHECK (report_month = date_trunc('month', report_month)::date),
-    CONSTRAINT chk_usage_statements_progress_rate CHECK (cumulative_progress_rate BETWEEN 0 AND 100)
+    CONSTRAINT chk_usage_statements_progress_rate CHECK (cumulative_progress_rate BETWEEN 0 AND 100),
+    CONSTRAINT chk_usage_statements_status_code CHECK (status_code IN ('draft', 'upload_completed', 'supplement_required', 'review_completed'))
 );
 
 CREATE TABLE usage_statement_summaries (
@@ -153,10 +155,8 @@ CREATE TABLE evidence_file_links (
     id BIGSERIAL PRIMARY KEY,
     usage_statement_item_id BIGINT NOT NULL,
     file_id BIGINT NOT NULL,
-    category_code VARCHAR(50) NOT NULL,
     evidence_type_code VARCHAR(30) NOT NULL,
     checked_at TIMESTAMPTZ,
-    checked_by_user_id BIGINT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT uq_evidence_file_links_item_file UNIQUE (usage_statement_item_id, file_id)
@@ -176,8 +176,10 @@ CREATE TABLE agent_logs (
     id BIGSERIAL PRIMARY KEY,
     project_id BIGINT NOT NULL,
     usage_statement_id BIGINT,
+    usage_statement_item_id BIGINT,
     agent_type_code VARCHAR(20) NOT NULL,
     status_code VARCHAR(20) NOT NULL DEFAULT 'running',
+    run_id UUID,
     details JSONB,
     model_name VARCHAR(100),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -197,11 +199,11 @@ CREATE TABLE action_requests (
     status_code VARCHAR(30) NOT NULL,
     due_date DATE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    resolved_at TIMESTAMPTZ,
-    CONSTRAINT chk_action_requests_status_code CHECK (status_code IN ('open', 'in_progress', 'resolved', 'closed')),
-    CONSTRAINT chk_action_requests_resolved_at_required CHECK (
-        (status_code IN ('resolved', 'closed') AND resolved_at IS NOT NULL)
-        OR (status_code NOT IN ('resolved', 'closed'))
+    closed_at TIMESTAMPTZ,
+    CONSTRAINT chk_action_requests_status_code CHECK (status_code IN ('open', 'in_progress', 'closed')),
+    CONSTRAINT chk_action_requests_closed_at_required CHECK (
+        (status_code = 'closed' AND closed_at IS NOT NULL)
+        OR status_code <> 'closed'
     )
 );
 
@@ -258,16 +260,8 @@ ALTER TABLE evidence_file_links
     FOREIGN KEY (file_id) REFERENCES files (id);
 
 ALTER TABLE evidence_file_links
-    ADD CONSTRAINT fk_evidence_file_links_category_code
-    FOREIGN KEY (category_code) REFERENCES usage_categories (code);
-
-ALTER TABLE evidence_file_links
     ADD CONSTRAINT fk_evidence_file_links_evidence_type_code
     FOREIGN KEY (evidence_type_code) REFERENCES evidence_types (code);
-
-ALTER TABLE evidence_file_links
-    ADD CONSTRAINT fk_evidence_file_links_checked_by_user_id
-    FOREIGN KEY (checked_by_user_id) REFERENCES users (id);
 
 ALTER TABLE evidence_requirements
     ADD CONSTRAINT fk_evidence_requirements_usage_statement_item_id
@@ -285,6 +279,9 @@ ALTER TABLE agent_logs
     ADD CONSTRAINT fk_agent_logs_usage_statement_id
     FOREIGN KEY (usage_statement_id) REFERENCES usage_statements (id);
 
+ALTER TABLE agent_logs
+    ADD CONSTRAINT fk_agent_logs_usage_statement_item_id
+    FOREIGN KEY (usage_statement_item_id) REFERENCES usage_statement_items (id);
 
 ALTER TABLE action_requests
     ADD CONSTRAINT fk_action_requests_project_id
@@ -330,6 +327,7 @@ CREATE INDEX idx_files_deleted_by_user_id ON files (deleted_by_user_id) WHERE de
 
 CREATE INDEX idx_usage_statements_project_id ON usage_statements (project_id);
 CREATE INDEX idx_usage_statements_report_month ON usage_statements (report_month DESC);
+CREATE INDEX idx_usage_statements_status_code ON usage_statements (status_code);
 
 CREATE INDEX idx_usage_statement_summaries_category_code ON usage_statement_summaries (category_code);
 
@@ -337,9 +335,7 @@ CREATE INDEX idx_usage_statement_items_statement_date ON usage_statement_items (
 CREATE INDEX idx_usage_statement_items_statement_category ON usage_statement_items (usage_statement_id, category_code);
 CREATE INDEX idx_usage_statement_items_category_date ON usage_statement_items (category_code, used_on DESC);
 
-CREATE INDEX idx_evidence_file_links_file_category ON evidence_file_links (file_id, category_code);
 CREATE INDEX idx_evidence_file_links_evidence_type_code ON evidence_file_links (evidence_type_code);
-CREATE INDEX idx_evidence_file_links_category_code ON evidence_file_links (category_code);
 CREATE INDEX idx_evidence_file_links_checked_at ON evidence_file_links (checked_at) WHERE checked_at IS NOT NULL;
 CREATE INDEX idx_evidence_file_links_unchecked ON evidence_file_links (usage_statement_item_id, file_id) WHERE checked_at IS NULL;
 
@@ -358,6 +354,8 @@ CREATE INDEX idx_agent_logs_statement_created_at ON agent_logs (usage_statement_
     WHERE usage_statement_id IS NOT NULL;
 CREATE INDEX idx_agent_logs_type_status_created_at ON agent_logs (agent_type_code, status_code, created_at DESC);
 CREATE INDEX idx_agent_logs_details_gin ON agent_logs USING GIN (details);
+CREATE INDEX idx_agent_logs_run_id ON agent_logs (run_id) WHERE run_id IS NOT NULL;
+CREATE INDEX idx_agent_logs_item_id ON agent_logs (usage_statement_item_id) WHERE usage_statement_item_id IS NOT NULL;
 
 CREATE INDEX idx_action_requests_project_status ON action_requests (project_id, status_code);
 CREATE INDEX idx_action_requests_assignee_status ON action_requests (assignee_user_id, status_code) WHERE assignee_user_id IS NOT NULL;
@@ -435,6 +433,7 @@ COMMENT ON COLUMN usage_statements.report_month IS '보고월 (해당월 1일로
 COMMENT ON COLUMN usage_statements.revision_no IS '개정번호';
 COMMENT ON COLUMN usage_statements.document_written_date IS '문서작성일';
 COMMENT ON COLUMN usage_statements.cumulative_progress_rate IS '누계공정률';
+COMMENT ON COLUMN usage_statements.status_code IS '사용내역서 제출·검토 단계 (draft → upload_completed → supplement_required → review_completed)';
 COMMENT ON COLUMN usage_statements.created_at IS '생성일시';
 COMMENT ON COLUMN usage_statements.updated_at IS '수정일시';
 
@@ -477,10 +476,8 @@ COMMENT ON COLUMN files.deleted_by_user_id IS '삭제한사용자ID';
 COMMENT ON COLUMN evidence_file_links.id IS '매핑ID';
 COMMENT ON COLUMN evidence_file_links.usage_statement_item_id IS '증빙 대상 상세항목ID';
 COMMENT ON COLUMN evidence_file_links.file_id IS '증빙 파일ID';
-COMMENT ON COLUMN evidence_file_links.category_code IS '증빙 카테고리 (items에서 복사, 조회 최적화)';
 COMMENT ON COLUMN evidence_file_links.evidence_type_code IS '증빙유형 (receipt / site_photo / etc)';
-COMMENT ON COLUMN evidence_file_links.checked_at IS '담당자 검토일시';
-COMMENT ON COLUMN evidence_file_links.checked_by_user_id IS '검토한사용자ID';
+COMMENT ON COLUMN evidence_file_links.checked_at IS '사용자 확인 일시';
 COMMENT ON COLUMN evidence_file_links.created_at IS '생성일시';
 COMMENT ON COLUMN evidence_file_links.updated_at IS '수정일시';
 
@@ -495,8 +492,10 @@ COMMENT ON COLUMN evidence_types.description IS '설명';
 COMMENT ON COLUMN agent_logs.id IS 'agent 로그 ID';
 COMMENT ON COLUMN agent_logs.agent_type_code IS '실행한 에이전트 코드 (classi / safety-doc / link / vision / legal / report)';
 COMMENT ON COLUMN agent_logs.status_code IS '실행 상태 (running / completed / failed)';
+COMMENT ON COLUMN agent_logs.run_id IS '유효성 검증 배치 실행 단위 ID — 같은 세트의 agent_logs끼리 동일한 UUID를 공유한다';
 COMMENT ON COLUMN agent_logs.details IS '에이전트 결과 및 상세 데이터 (JSONB)';
 COMMENT ON COLUMN agent_logs.model_name IS '사용된 AI 모델명';
+COMMENT ON COLUMN agent_logs.usage_statement_item_id IS '문제가 발생한 상세항목ID — 항목 수준 문제 감지 시 설정 (classi/safety-doc/link/vision). legal·report는 NULL.';
 
 COMMENT ON COLUMN action_requests.id IS '액션요청ID';
 COMMENT ON COLUMN action_requests.project_id IS '프로젝트ID';
@@ -506,7 +505,7 @@ COMMENT ON COLUMN action_requests.requested_by_user_id IS '요청자ID';
 COMMENT ON COLUMN action_requests.assignee_user_id IS '담당자ID';
 COMMENT ON COLUMN action_requests.title IS '요청제목';
 COMMENT ON COLUMN action_requests.reason IS '요청사유';
-COMMENT ON COLUMN action_requests.status_code IS '처리상태 (open/in_progress/resolved/closed)';
+COMMENT ON COLUMN action_requests.status_code IS '처리 상태 (open: 요청 발송됨 / in_progress: user 처리 중 / closed: admin 최종 확인 완료)';
 COMMENT ON COLUMN action_requests.due_date IS '처리기한';
 COMMENT ON COLUMN action_requests.created_at IS '생성일시';
-COMMENT ON COLUMN action_requests.resolved_at IS '처리완료일시';
+COMMENT ON COLUMN action_requests.closed_at IS 'admin 최종 확인 완료 일시 (status_code = ''closed'' 전환 시 자동 설정)';
