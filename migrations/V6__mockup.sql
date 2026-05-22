@@ -488,7 +488,7 @@ SELECT
     us.project_id,
     us.id,
     vd.agent_type_code,
-    'completed',
+    'success',
     vd.details::JSONB,
     'claude-sonnet-4-20250514',
     '2026-04-23 11:00:00+09'
@@ -758,7 +758,7 @@ SELECT
     us.project_id,
     us.id,
     vd.agent_type_code,
-    'completed',
+    'success',
     vd.details::JSONB,
     'claude-sonnet-4-20250514',
     '2026-04-21 14:00:00+09'
@@ -858,7 +858,7 @@ SELECT
     us.project_id,
     us.id,
     'classi',
-    'completed',
+    'success',
     '{"result":"conditional","issue":"일부 영수증 금액 OCR 인식 오류 - 수동 확인 필요","affected_items":1}'::JSONB,
     'claude-sonnet-4-20250514',
     '2026-03-20 10:00:00+09'

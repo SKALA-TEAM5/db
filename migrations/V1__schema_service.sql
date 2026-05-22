@@ -94,7 +94,7 @@ CREATE TABLE files (
     deleted_by_user_id BIGINT,
     CONSTRAINT uq_files_storage_key UNIQUE (storage_key),
     CONSTRAINT chk_files_size_bytes_non_negative CHECK (size_bytes >= 0),
-    CONSTRAINT chk_files_status_code CHECK (status_code IN ('draft', 'matched', 'unmatched'))
+    CONSTRAINT chk_files_status_code CHECK (status_code IN ('draft', 'success', 'fail'))
 );
 
 CREATE TABLE usage_statements (
@@ -178,13 +178,17 @@ CREATE TABLE agent_logs (
     usage_statement_id BIGINT,
     usage_statement_item_id BIGINT,
     agent_type_code VARCHAR(20) NOT NULL,
-    status_code VARCHAR(20) NOT NULL DEFAULT 'running',
-    run_id UUID,
+    status_code VARCHAR(20) NOT NULL DEFAULT 'pending',
+    result_code VARCHAR(20),
+    reason TEXT,
     details JSONB,
     model_name VARCHAR(100),
+    token BIGINT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CONSTRAINT chk_agent_logs_agent_type_code CHECK (agent_type_code IN ('classi', 'safety-doc', 'link', 'vision', 'legal', 'report')),
-    CONSTRAINT chk_agent_logs_status_code CHECK (status_code IN ('running', 'completed', 'failed'))
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT chk_agent_logs_agent_type_code CHECK (agent_type_code IN ('classi', 'safety-doc', 'link', 'vision', 'legal', 'report', 'orchestrator')),
+    CONSTRAINT chk_agent_logs_status_code CHECK (status_code IN ('pending', 'running', 'success', 'fail', 'canceled')),
+    CONSTRAINT chk_agent_logs_result_code CHECK (result_code IN ('success', 'hil', 'fail'))
 );
 
 CREATE TABLE action_requests (
@@ -354,7 +358,7 @@ CREATE INDEX idx_agent_logs_statement_created_at ON agent_logs (usage_statement_
     WHERE usage_statement_id IS NOT NULL;
 CREATE INDEX idx_agent_logs_type_status_created_at ON agent_logs (agent_type_code, status_code, created_at DESC);
 CREATE INDEX idx_agent_logs_details_gin ON agent_logs USING GIN (details);
-CREATE INDEX idx_agent_logs_run_id ON agent_logs (run_id) WHERE run_id IS NOT NULL;
+CREATE INDEX idx_agent_logs_result_code ON agent_logs (result_code) WHERE result_code IS NOT NULL;
 CREATE INDEX idx_agent_logs_item_id ON agent_logs (usage_statement_item_id) WHERE usage_statement_item_id IS NOT NULL;
 
 CREATE INDEX idx_action_requests_project_status ON action_requests (project_id, status_code);
@@ -396,6 +400,9 @@ BEFORE UPDATE ON evidence_file_links FOR EACH ROW EXECUTE FUNCTION set_updated_a
 
 CREATE TRIGGER trg_evidence_requirements_set_updated_at
 BEFORE UPDATE ON evidence_requirements FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE TRIGGER trg_agent_logs_set_updated_at
+BEFORE UPDATE ON agent_logs FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 -- ─────────────────────────────────────────────────────────────
 -- Column comments
@@ -490,12 +497,15 @@ COMMENT ON COLUMN evidence_types.name IS '증빙유형명';
 COMMENT ON COLUMN evidence_types.description IS '설명';
 
 COMMENT ON COLUMN agent_logs.id IS 'agent 로그 ID';
-COMMENT ON COLUMN agent_logs.agent_type_code IS '실행한 에이전트 코드 (classi / safety-doc / link / vision / legal / report)';
-COMMENT ON COLUMN agent_logs.status_code IS '실행 상태 (running / completed / failed)';
-COMMENT ON COLUMN agent_logs.run_id IS '유효성 검증 배치 실행 단위 ID — 같은 세트의 agent_logs끼리 동일한 UUID를 공유한다';
-COMMENT ON COLUMN agent_logs.details IS '에이전트 결과 및 상세 데이터 (JSONB)';
+COMMENT ON COLUMN agent_logs.agent_type_code IS '실행한 에이전트 코드 (classi / safety-doc / link / vision / legal / report / orchestrator)';
+COMMENT ON COLUMN agent_logs.status_code IS '실행 상태 (pending / running / success / fail / canceled)';
+COMMENT ON COLUMN agent_logs.result_code IS '판단 결과 (success / hil / fail) — status=success일 때만 유효';
+COMMENT ON COLUMN agent_logs.reason IS '프론트 표시용 한 줄 사유';
+COMMENT ON COLUMN agent_logs.details IS '에이전트별 추가 페이로드 JSONB (issue_type, 수치 등)';
 COMMENT ON COLUMN agent_logs.model_name IS '사용된 AI 모델명';
-COMMENT ON COLUMN agent_logs.usage_statement_item_id IS '문제가 발생한 상세항목ID — 항목 수준 문제 감지 시 설정 (classi/safety-doc/link/vision). legal·report는 NULL.';
+COMMENT ON COLUMN agent_logs.token IS '사용 토큰 수';
+COMMENT ON COLUMN agent_logs.usage_statement_item_id IS '상세항목ID — 항목 기준 1 row. legal·report는 NULL.';
+COMMENT ON COLUMN agent_logs.updated_at IS '최종 수정일시 (update-in-place 갱신 추적용)';
 
 COMMENT ON COLUMN action_requests.id IS '액션요청ID';
 COMMENT ON COLUMN action_requests.project_id IS '프로젝트ID';
