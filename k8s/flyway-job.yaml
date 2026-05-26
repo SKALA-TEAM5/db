@@ -1,0 +1,84 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: team5-db-flyway-migrate
+  namespace: skala3-finalproj-class2-team5
+  labels:
+    app: team5-db
+    component: flyway-migration
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: team5-db
+        component: flyway-migration
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: flyway
+          image: flyway/flyway:10-alpine
+          imagePullPolicy: IfNotPresent
+          command:
+            - flyway
+          args:
+            - migrate
+          env:
+            - name: FLYWAY_URL
+              value: jdbc:postgresql://team5-postgres:5432/safety
+            - name: FLYWAY_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: team5-postgres-config
+                  key: POSTGRES_USER
+            - name: FLYWAY_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: team5-postgres-secret
+                  key: POSTGRES_PASSWORD
+            - name: FLYWAY_PLACEHOLDERS_SERVICE_APP_USER
+              valueFrom:
+                secretKeyRef:
+                  name: team5-postgres-secret
+                  key: SERVICE_APP_USER
+            - name: FLYWAY_PLACEHOLDERS_SERVICE_APP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: team5-postgres-secret
+                  key: SERVICE_APP_PASSWORD
+            - name: FLYWAY_PLACEHOLDERS_LAW_APP_USER
+              valueFrom:
+                secretKeyRef:
+                  name: team5-postgres-secret
+                  key: LAW_APP_USER
+            - name: FLYWAY_PLACEHOLDERS_LAW_APP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: team5-postgres-secret
+                  key: LAW_APP_PASSWORD
+            - name: FLYWAY_PLACEHOLDERS_DEV_ADMIN_USER
+              valueFrom:
+                secretKeyRef:
+                  name: team5-postgres-secret
+                  key: DEV_ADMIN_USER
+            - name: FLYWAY_PLACEHOLDERS_DEV_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: team5-postgres-secret
+                  key: DEV_ADMIN_PASSWORD
+            - name: FLYWAY_CONNECT_RETRIES
+              value: "30"
+            - name: FLYWAY_BASELINE_ON_MIGRATE
+              value: "true"
+            - name: FLYWAY_BASELINE_VERSION
+              value: "1"
+            - name: FLYWAY_LOCATIONS
+              value: filesystem:/flyway/migrations
+          volumeMounts:
+            - name: migrations
+              mountPath: /flyway/migrations
+              readOnly: true
+      volumes:
+        - name: migrations
+          configMap:
+            name: team5-db-migrations

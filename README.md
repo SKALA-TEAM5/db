@@ -15,8 +15,9 @@
     - `V2__law.sql` : 법률 스키마 설정
     - `V3__roles_and_grants.sql`: 권한별 유저 생성
     - `V4__seed_types.sql` : 카테고리 및 증빙 자료 기본 설정 insert
-    - ~~`V5__seed_service_dummy_data.sql` : 더미데이터 insert~~
-    - ...
+    - `V5__align_backend_schema.sql` : 백엔드 스키마 정합성 보정
+    - `V6__mockup.sql` : 개발 로그인 계정 및 로컬/개발용 목업 데이터
+- `db/local-dev`: 정식 Flyway 적용 대상이 아닌 로컬 검토용 SQL
 
 
 ## 3. 로컬 개발 기본 순서
@@ -64,20 +65,41 @@ make db-up
 - 법률 스키마 확인용: `LAW_APP_USER` / `LAW_APP_PASSWORD`
 - 관리자 확인용: `DEV_ADMIN_USER` / `DEV_ADMIN_PASSWORD`
 
-## 5. 기타 사항 정리
+## 6. 권한 제어
 
-### 5.1. 유저 권한 한눈에 보기
+- 현재 서비스 DB는 RLS를 사용하지 않습니다.
+- 프로젝트 권한은 백엔드 서비스 레이어에서 검사합니다.
+- 프로젝트 담당자는 `projects.user_id`가 아니라 `project_user_assignments` 다대다 테이블로 관리합니다.
+- `system_admin`은 사용자 관리 전용 역할입니다.
+- `admin`은 프로젝트 생성과 관리가 가능합니다.
+- `user`는 배정된 프로젝트만 조회/작업할 수 있습니다.
+
+## 7. 기타 사항 정리
+
+### 7.0. 개발 로그인 계정
+
+| 구분 | 사번 | 이름 | 비밀번호 | roleCode |
+| --- | --- | --- | --- | --- |
+| 초기 시스템 관리자 | `SYS-001` | 시스템관리자 | `P@ssw0rd123!` | `system_admin` |
+| 본사 SHE 담당자 | `ADMIN-001` | 김서연 | `Admin1234!` | `admin` |
+| 본사 SHE 담당자 | `ADMIN-002` | 박민준 | `Admin1234!` | `admin` |
+| 현장 SHE 담당자 | `USER-001` | 이현우 | `User1234!` | `user` |
+| 현장 SHE 담당자 | `USER-002` | 최지훈 | `User1234!` | `user` |
+| 현장 SHE 담당자 | `USER-003` | 정유진 | `User1234!` | `user` |
+| 현장 SHE 담당자 | `USER-004` | 한도윤 | `User1234!` | `user` |
+
+### 7.1. 유저 권한 한눈에 보기
 
 - 앱 계정 (총 3개)
   - `${SERVICE_APP_USER}`: `service` 스키마 전용
   - `${LAW_APP_USER}`: `legal_rag` 스키마 전용
   - `${DEV_ADMIN_USER}`: 로컬 개발용 관리자 계정(`SUPERUSER`)
-- 두 계정 모두 자기 스키마에서는 CRUD(`SELECT/INSERT/UPDATE/DELETE`) 가능합니다.
-- 서로의 스키마는 접근 못 하게 막혀있습니다.
-- 새로 만드는 테이블/시퀀스에도 같은 권한이 자동 적용됩니다(`ALTER DEFAULT PRIVILEGES`).
-- `dev_admin`도 하드코딩이 아니라 `.env`(`DEV_ADMIN_USER`, `DEV_ADMIN_PASSWORD`)로 관리합니다.
+- 두 계정 모두 자기 스키마에서는 CRUD(`SELECT/INSERT/UPDATE/DELETE`) 가능
+- 서로의 스키마는 접근 못 하게 막혀있음
+- 새로 만드는 테이블/시퀀스에도 같은 권한이 자동 적용(`ALTER DEFAULT PRIVILEGES`).
+- `dev_admin`도 하드코딩이 아니라 `.env`(`DEV_ADMIN_USER`, `DEV_ADMIN_PASSWORD`)로 관리
 
-### 5.2. 참고할 점
+### 7.2. 참고할 점
 
 - 변경은 새 마이그레이션 파일로 추가
 - 계정명/비밀번호는 `.env` 값(`SERVICE_APP_USER`, `LAW_APP_USER`, `DEV_ADMIN_USER` 등)으로 관리
@@ -86,7 +108,7 @@ make db-up
   2. `make db-migrate`
   3. 필요한 경우 `make db-re` 후 `make db-migrate`
 
-### 5.3. 현재 설정 참고
+### 7.3. 현재 설정 참고
 - Flyway 설정:
   - `baselineOnMigrate=true`
   - `baselineVersion=1`
