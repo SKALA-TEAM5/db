@@ -9,6 +9,8 @@
 .env
 .env.*
 !.env.example
+*.local.yaml
+*.local.yml
 
 # logs
 *.log
@@ -25,5 +27,4 @@ backups/
 tmp/
 
 docs/
-
 

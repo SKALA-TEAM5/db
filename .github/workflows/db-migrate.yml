@@ -1,0 +1,72 @@
+name: DB Migration
+
+on:
+  workflow_dispatch:
+
+env:
+  AWS_REGION: ap-northeast-2
+  EKS_CLUSTER_NAME: skala-2025
+  K8S_NAMESPACE: skala3-finalproj-class2-team5
+  MIGRATIONS_CONFIGMAP: team5-db-migrations
+  FLYWAY_JOB: team5-db-flyway-migrate
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --region "${AWS_REGION}" \
+            --name "${EKS_CLUSTER_NAME}"
+
+      - name: Set namespace
+        run: |
+          kubectl config set-context --current --namespace="${K8S_NAMESPACE}"
+          kubectl config current-context
+
+      - name: Check namespace resources
+        run: |
+          kubectl get pods -n "${K8S_NAMESPACE}"
+          kubectl get svc -n "${K8S_NAMESPACE}"
+
+      - name: Update migrations ConfigMap
+        run: |
+          kubectl create configmap "${MIGRATIONS_CONFIGMAP}" \
+            --from-file=./migrations \
+            --dry-run=client \
+            -o yaml | kubectl apply -f -
+
+      - name: Re-run Flyway job
+        run: |
+          kubectl delete job "${FLYWAY_JOB}" --ignore-not-found=true
+          kubectl apply -f k8s/flyway-job.yaml
+
+      - name: Wait for Flyway job
+        run: |
+          kubectl wait \
+            --for=condition=complete \
+            "job/${FLYWAY_JOB}" \
+            --timeout=180s
+
+      - name: Print Flyway logs
+        if: always()
+        run: |
+          kubectl logs "job/${FLYWAY_JOB}" || true
+
+      - name: Check Flyway job status
+        if: always()
+        run: |
+          kubectl get job "${FLYWAY_JOB}" -o wide || true
+          kubectl get pods -l job-name="${FLYWAY_JOB}" -o wide || true
