@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: team5-minio
+  namespace: skala3-finalproj-class2-team5
+  labels:
+    app: team5-minio
+spec:
+  serviceName: team5-minio
+  replicas: 1
+  selector:
+    matchLabels:
+      app: team5-minio
+  template:
+    metadata:
+      labels:
+        app: team5-minio
+    spec:
+      containers:
+        - name: minio
+          image: minio/minio:latest
+          imagePullPolicy: IfNotPresent
+          args:
+            - server
+            - /data
+            - --console-address
+            - :9001
+          ports:
+            - name: api
+              containerPort: 9000
+            - name: console
+              containerPort: 9001
+          envFrom:
+            - configMapRef:
+                name: team5-minio-config
+            - secretRef:
+                name: team5-minio-secret
+          volumeMounts:
+            - name: minio-data
+              mountPath: /data
+          readinessProbe:
+            httpGet:
+              path: /minio/health/ready
+              port: api
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /minio/health/live
+              port: api
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+  volumeClaimTemplates:
+    - metadata:
+        name: minio-data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 10Gi
