@@ -6,7 +6,7 @@ on:
       - main
     paths:
       - "migrations/**"
-      - "k8s/**"
+      - "k8s/jobs/**"
       - ".github/workflows/db-migrate.yml"
   workflow_dispatch:
 
@@ -58,7 +58,7 @@ jobs:
       - name: Re-run Flyway job
         run: |
           kubectl delete job "${FLYWAY_JOB}" --ignore-not-found=true
-          kubectl apply -f k8s/flyway-job.yaml
+          kubectl apply -f k8s/jobs/flyway-job.yaml
 
       - name: Wait for Flyway job
         run: |

@@ -17,6 +17,12 @@ It does not create a namespace, LoadBalancer, ALB, node group, or Terraform-mana
 - `team5-db-migrations` ConfigMap: generated from `../migrations`
 - `team5-db-flyway-migrate` Job: applies Flyway migrations
 
+## Management policy
+
+- ArgoCD manages PostgreSQL resources in `k8s/postgres`.
+- GitHub Actions runs Flyway migrations from `k8s/jobs/flyway-job.yaml`.
+- Real Secrets are created directly in Kubernetes and are not committed.
+
 ## 1. Set namespace
 
 ```bash
@@ -43,10 +49,14 @@ kubectl create secret generic team5-postgres-secret \
 ## 3. Deploy PostgreSQL
 
 ```bash
-kubectl apply -f k8s/postgres-configmap.yaml
-kubectl apply -f k8s/postgres-service.yaml
-kubectl apply -f k8s/postgres-statefulset.yaml
+kubectl apply -k k8s/postgres
 kubectl rollout status statefulset/team5-postgres
+```
+
+For ArgoCD, set the application path to:
+
+```text
+k8s/postgres
 ```
 
 ## 4. Create migrations ConfigMap
@@ -77,7 +87,7 @@ kubectl create configmap team5-db-migrations \
 
 ```bash
 kubectl delete job team5-db-flyway-migrate --ignore-not-found=true
-kubectl apply -f k8s/flyway-job.yaml
+kubectl apply -f k8s/jobs/flyway-job.yaml
 kubectl wait --for=condition=complete job/team5-db-flyway-migrate --timeout=180s
 kubectl logs job/team5-db-flyway-migrate
 ```
