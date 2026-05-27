@@ -1,6 +1,13 @@
 name: DB Migration
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - "migrations/**"
+      - "k8s/**"
+      - ".github/workflows/db-migrate.yml"
   workflow_dispatch:
 
 env:
