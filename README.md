@@ -4,6 +4,28 @@
 
 - 이 프로젝트의 DB 스키마 변경 관리는 Flyway로 수행합니다.
 - 마이그레이션 SQL 파일은 `db/migrations`에 둡니다.
+- 실제 비밀번호는 커밋하지 않고 `.env` 또는 Kubernetes Secret으로 주입합니다.
+- `develop`에서는 DB 접속과 검증만 수행하고, 운영 DB 마이그레이션 자동 적용은 `main`에서만 수행합니다.
+
+## 환경 설정 원칙
+
+- 로컬 DB를 직접 띄울 때는 `.env.example`을 `.env`로 복사해서 사용합니다.
+- 공용 Kubernetes DB를 로컬 앱에서 사용할 때는 port-forward를 사용합니다.
+- Kubernetes 배포 값은 `k8s/postgres`의 ConfigMap/Secret과 Flyway Job에서 관리합니다.
+
+공용 DB 포워딩 예시:
+
+```bash
+kubectl port-forward svc/team5-postgres 5433:5432 -n skala3-finalproj-class2-team5
+```
+
+로컬 앱에서는 아래처럼 접속합니다.
+
+```text
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5433
+POSTGRES_DB=safety
+```
 
 ## 2. 디렉토리 구조
 
