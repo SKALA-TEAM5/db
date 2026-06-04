@@ -11,7 +11,8 @@
 
 - 로컬 DB를 직접 띄울 때는 `.env.example`을 `.env`로 복사해서 사용합니다.
 - 공용 Kubernetes DB를 로컬 앱에서 사용할 때는 port-forward를 사용합니다.
-- Kubernetes 배포 값은 `k8s/postgres`의 ConfigMap/Secret과 Flyway Job에서 관리합니다.
+- Kubernetes 배포 값과 Flyway Job manifest는 `SKALA-TEAM5/deploy` 레포에서 관리합니다.
+- 이 레포는 Flyway migration SQL과 migration 실행 workflow를 관리합니다.
 
 공용 DB 포워딩 예시:
 

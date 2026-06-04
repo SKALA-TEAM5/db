@@ -6,7 +6,6 @@ on:
       - main
     paths:
       - "migrations/**"
-      - "k8s/jobs/**"
       - ".github/workflows/db-migrate.yml"
   workflow_dispatch:
 
@@ -24,6 +23,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Checkout deploy manifests
+        uses: actions/checkout@v4
+        with:
+          repository: SKALA-TEAM5/deploy
+          ref: main
+          path: deploy
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -58,7 +64,7 @@ jobs:
       - name: Re-run Flyway job
         run: |
           kubectl delete job "${FLYWAY_JOB}" --ignore-not-found=true
-          kubectl apply -f k8s/jobs/flyway-job.yaml
+          kubectl apply -f deploy/k8s/jobs/flyway-job.yaml
 
       - name: Wait for Flyway job
         run: |
