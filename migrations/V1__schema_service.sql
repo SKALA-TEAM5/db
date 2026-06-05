@@ -92,6 +92,7 @@ CREATE TABLE files (
     status_code VARCHAR(20) NOT NULL DEFAULT 'draft',
     deleted_at TIMESTAMPTZ,
     deleted_by_user_id BIGINT,
+    detail JSONB,
     CONSTRAINT uq_files_storage_key UNIQUE (storage_key),
     CONSTRAINT chk_files_size_bytes_non_negative CHECK (size_bytes >= 0),
     CONSTRAINT chk_files_status_code CHECK (status_code IN ('draft', 'success', 'fail'))
@@ -184,6 +185,8 @@ CREATE TABLE agent_logs (
     details JSONB,
     model_name VARCHAR(100),
     token BIGINT,
+    token_current    BIGINT,
+    token_cumulative BIGINT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT chk_agent_logs_agent_type_code CHECK (agent_type_code IN ('classi', 'safety-doc', 'link', 'vision', 'legal', 'report', 'orchestrator')),
@@ -191,24 +194,24 @@ CREATE TABLE agent_logs (
     CONSTRAINT chk_agent_logs_result_code CHECK (result_code IN ('success', 'hil', 'fail'))
 );
 
-CREATE TABLE action_requests (
-    id BIGSERIAL PRIMARY KEY,
-    project_id BIGINT NOT NULL,
-    usage_statement_id BIGINT,
-    usage_statement_item_id BIGINT,
-    requested_by_user_id BIGINT NOT NULL,
-    assignee_user_id BIGINT,
-    title VARCHAR(300) NOT NULL,
-    reason TEXT,
-    status_code VARCHAR(30) NOT NULL,
-    due_date DATE,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    closed_at TIMESTAMPTZ,
-    CONSTRAINT chk_action_requests_status_code CHECK (status_code IN ('open', 'in_progress', 'closed')),
-    CONSTRAINT chk_action_requests_closed_at_required CHECK (
-        (status_code = 'closed' AND closed_at IS NOT NULL)
-        OR status_code <> 'closed'
-    )
+CREATE TABLE agent_usage_records (
+    id                   BIGSERIAL PRIMARY KEY,
+    user_id              BIGINT        NOT NULL REFERENCES users(id),
+    project_id           BIGINT        NOT NULL REFERENCES projects(id),
+    usage_statement_id   BIGINT        REFERENCES usage_statements(id),
+    agent_type_code      VARCHAR(20)   NOT NULL,
+    model_name           VARCHAR(100),
+    input_tokens         BIGINT,
+    output_tokens        BIGINT,
+    cost_usd             NUMERIC(12,8),
+    created_at           TIMESTAMPTZ   NOT NULL DEFAULT now(),
+
+    CONSTRAINT chk_agent_usage_records_agent_type_code
+        CHECK (agent_type_code IN ('classi', 'safety-doc', 'link', 'vision', 'legal', 'report', 'orchestrator')),
+    CONSTRAINT chk_agent_usage_records_tokens_non_negative
+        CHECK (input_tokens >= 0 AND output_tokens >= 0),
+    CONSTRAINT chk_agent_usage_records_cost_non_negative
+        CHECK (cost_usd >= 0)
 );
 
 -- ─────────────────────────────────────────────────────────────
@@ -287,25 +290,6 @@ ALTER TABLE agent_logs
     ADD CONSTRAINT fk_agent_logs_usage_statement_item_id
     FOREIGN KEY (usage_statement_item_id) REFERENCES usage_statement_items (id);
 
-ALTER TABLE action_requests
-    ADD CONSTRAINT fk_action_requests_project_id
-    FOREIGN KEY (project_id) REFERENCES projects (id);
-
-ALTER TABLE action_requests
-    ADD CONSTRAINT fk_action_requests_usage_statement_id
-    FOREIGN KEY (usage_statement_id) REFERENCES usage_statements (id);
-
-ALTER TABLE action_requests
-    ADD CONSTRAINT fk_action_requests_usage_statement_item_id
-    FOREIGN KEY (usage_statement_item_id) REFERENCES usage_statement_items (id);
-
-ALTER TABLE action_requests
-    ADD CONSTRAINT fk_action_requests_requested_by_user_id
-    FOREIGN KEY (requested_by_user_id) REFERENCES users (id);
-
-ALTER TABLE action_requests
-    ADD CONSTRAINT fk_action_requests_assignee_user_id
-    FOREIGN KEY (assignee_user_id) REFERENCES users (id);
 
 -- ─────────────────────────────────────────────────────────────
 -- Indexes
@@ -361,12 +345,20 @@ CREATE INDEX idx_agent_logs_details_gin ON agent_logs USING GIN (details);
 CREATE INDEX idx_agent_logs_result_code ON agent_logs (result_code) WHERE result_code IS NOT NULL;
 CREATE INDEX idx_agent_logs_item_id ON agent_logs (usage_statement_item_id) WHERE usage_statement_item_id IS NOT NULL;
 
-CREATE INDEX idx_action_requests_project_status ON action_requests (project_id, status_code);
-CREATE INDEX idx_action_requests_assignee_status ON action_requests (assignee_user_id, status_code) WHERE assignee_user_id IS NOT NULL;
-CREATE INDEX idx_action_requests_requested_by_user_id ON action_requests (requested_by_user_id);
-CREATE INDEX idx_action_requests_statement_id ON action_requests (usage_statement_id) WHERE usage_statement_id IS NOT NULL;
-CREATE INDEX idx_action_requests_item_id ON action_requests (usage_statement_item_id) WHERE usage_statement_item_id IS NOT NULL;
-CREATE INDEX idx_action_requests_open_due ON action_requests (project_id, due_date) WHERE status_code IN ('open', 'in_progress') AND due_date IS NOT NULL;
+CREATE UNIQUE INDEX uq_agent_logs_item_type
+    ON agent_logs (usage_statement_item_id, agent_type_code)
+    WHERE usage_statement_item_id IS NOT NULL;
+
+CREATE UNIQUE INDEX uq_agent_logs_statement_type
+    ON agent_logs (usage_statement_id, agent_type_code)
+    WHERE usage_statement_item_id IS NULL;
+
+
+CREATE INDEX idx_agent_usage_records_user_project_date
+    ON agent_usage_records (user_id, project_id, created_at);
+
+CREATE INDEX idx_agent_usage_records_project_date
+    ON agent_usage_records (project_id, created_at);
 
 -- ─────────────────────────────────────────────────────────────
 -- updated_at trigger
@@ -403,7 +395,6 @@ BEFORE UPDATE ON evidence_requirements FOR EACH ROW EXECUTE FUNCTION set_updated
 
 CREATE TRIGGER trg_agent_logs_set_updated_at
 BEFORE UPDATE ON agent_logs FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-
 -- ─────────────────────────────────────────────────────────────
 -- Column comments
 -- ─────────────────────────────────────────────────────────────
@@ -479,6 +470,7 @@ COMMENT ON COLUMN files.captured_at IS '촬영일시 (현장사진인 경우 EXI
 COMMENT ON COLUMN files.uploaded_at IS '업로드일시';
 COMMENT ON COLUMN files.deleted_at IS '소프트삭제일시';
 COMMENT ON COLUMN files.deleted_by_user_id IS '삭제한사용자ID';
+COMMENT ON COLUMN files.detail IS '파일 부가 정보 (현장사진 EXIF, AI 분석 결과 등) — FastAPI가 기록';
 
 COMMENT ON COLUMN evidence_file_links.id IS '매핑ID';
 COMMENT ON COLUMN evidence_file_links.usage_statement_item_id IS '증빙 대상 상세항목ID';
@@ -506,16 +498,10 @@ COMMENT ON COLUMN agent_logs.model_name IS '사용된 AI 모델명';
 COMMENT ON COLUMN agent_logs.token IS '사용 토큰 수';
 COMMENT ON COLUMN agent_logs.usage_statement_item_id IS '상세항목ID — 항목 기준 1 row. legal·report는 NULL.';
 COMMENT ON COLUMN agent_logs.updated_at IS '최종 수정일시 (update-in-place 갱신 추적용)';
+COMMENT ON COLUMN agent_logs.token_current    IS '이번 회차 토큰 사용량';
+COMMENT ON COLUMN agent_logs.token_cumulative IS '누적 토큰 사용량 (재실행 시 합산)';
 
-COMMENT ON COLUMN action_requests.id IS '액션요청ID';
-COMMENT ON COLUMN action_requests.project_id IS '프로젝트ID';
-COMMENT ON COLUMN action_requests.usage_statement_id IS '관련 사용내역서ID (있는 경우)';
-COMMENT ON COLUMN action_requests.usage_statement_item_id IS '관련 상세항목ID (있는 경우)';
-COMMENT ON COLUMN action_requests.requested_by_user_id IS '요청자ID';
-COMMENT ON COLUMN action_requests.assignee_user_id IS '담당자ID';
-COMMENT ON COLUMN action_requests.title IS '요청제목';
-COMMENT ON COLUMN action_requests.reason IS '요청사유';
-COMMENT ON COLUMN action_requests.status_code IS '처리 상태 (open: 요청 발송됨 / in_progress: user 처리 중 / closed: admin 최종 확인 완료)';
-COMMENT ON COLUMN action_requests.due_date IS '처리기한';
-COMMENT ON COLUMN action_requests.created_at IS '생성일시';
-COMMENT ON COLUMN action_requests.closed_at IS 'admin 최종 확인 완료 일시 (status_code = ''closed'' 전환 시 자동 설정)';
+
+COMMENT ON COLUMN agent_usage_records.input_tokens  IS '입력 토큰 수';
+COMMENT ON COLUMN agent_usage_records.output_tokens IS '출력 토큰 수';
+COMMENT ON COLUMN agent_usage_records.cost_usd      IS 'API 호출 비용 (USD), 소수점 8자리';
