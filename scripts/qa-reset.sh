@@ -5,9 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ENV_FILE="${ENV_FILE:-"$ROOT_DIR/.env"}"
 MIGRATIONS_DIR="$ROOT_DIR/db/migrations"
 
-YES=false
 LOCAL=false
-PORT_FORWARD=false
 K8S_NAMESPACE="${K8S_NAMESPACE:-skala3-finalproj-class2-team5}"
 K8S_PG_SERVICE="${K8S_PG_SERVICE:-svc/team5-postgres}"
 K8S_MINIO_SERVICE="${K8S_MINIO_SERVICE:-svc/team5-minio}"
@@ -17,58 +15,29 @@ MINIO_LOCAL_PORT="${MINIO_LOCAL_PORT:-9002}"
 usage() {
   cat <<'EOF'
 Usage:
-  db/scripts/qa-reset.sh --yes --port-forward   # K8s 개발서버 (로컬에서 port-forward)
-  db/scripts/qa-reset.sh --yes --local           # docker-compose 로컬 환경
+  db/scripts/qa-reset.sh           # K8s 개발서버 초기화
+  db/scripts/qa-reset.sh --local   # docker-compose 로컬 환경 초기화
 
 Options:
-  --yes                     Required. 파괴적 작업 확인.
-  --port-forward            K8s 서비스를 로컬에 port-forward 후 접속.
-  --local                   docker-compose 로컬 환경 모드.
-  --namespace NAME          K8s 네임스페이스. Default: skala3-finalproj-class2-team5
-  --pg-service NAME         K8s Postgres 서비스. Default: svc/team5-postgres
-  --minio-service NAME      K8s MinIO 서비스.   Default: svc/team5-minio
-  --pg-local-port PORT      Postgres port-forward 로컬 포트. Default: 5433
-  --minio-local-port PORT   MinIO port-forward 로컬 포트.   Default: 9002
-  --env-file PATH           환경변수 파일. Default: .env
-
-초기화 대상:
-  - PostgreSQL service 스키마 (legal_rag 보존)
-  - MinIO 버킷 내 전체 파일
-
-Required env values:
-  POSTGRES_HOST, POSTGRES_PORT, POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD
-  SERVICE_APP_USER, SERVICE_APP_PASSWORD, LAW_APP_USER, LAW_APP_PASSWORD
-  DEV_ADMIN_USER, DEV_ADMIN_PASSWORD
-  MINIO_ROOT_USER, MINIO_ROOT_PASSWORD, APP_MINIO_BUCKET
+  --local               docker-compose 로컬 환경 모드
+  --namespace NAME      K8s 네임스페이스. Default: skala3-finalproj-class2-team5
+  --pg-service NAME     K8s Postgres 서비스. Default: svc/team5-postgres
+  --minio-service NAME  K8s MinIO 서비스.   Default: svc/team5-minio
+  --env-file PATH       환경변수 파일.       Default: .env
 EOF
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --yes)             YES=true;                  shift ;;
-    --local)           LOCAL=true;                shift ;;
-    --port-forward)    PORT_FORWARD=true;         shift ;;
-    --namespace)       K8S_NAMESPACE="$2";        shift 2 ;;
-    --pg-service)      K8S_PG_SERVICE="$2";       shift 2 ;;
-    --minio-service)   K8S_MINIO_SERVICE="$2";    shift 2 ;;
-    --pg-local-port)   PG_LOCAL_PORT="$2";        shift 2 ;;
-    --minio-local-port) MINIO_LOCAL_PORT="$2";    shift 2 ;;
-    --env-file)        ENV_FILE="$2";             shift 2 ;;
+    --local)           LOCAL=true;               shift ;;
+    --namespace)       K8S_NAMESPACE="$2";       shift 2 ;;
+    --pg-service)      K8S_PG_SERVICE="$2";      shift 2 ;;
+    --minio-service)   K8S_MINIO_SERVICE="$2";   shift 2 ;;
+    --env-file)        ENV_FILE="$2";            shift 2 ;;
     -h|--help)         usage; exit 0 ;;
     *) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
   esac
 done
-
-if [[ "$YES" != true ]]; then
-  echo "Refusing to reset without --yes." >&2
-  exit 2
-fi
-
-if [[ "$LOCAL" == false && "$PORT_FORWARD" == false ]]; then
-  echo "Either --local or --port-forward is required." >&2
-  usage >&2
-  exit 2
-fi
 
 if [[ ! -f "$ENV_FILE" ]]; then
   echo "Env file not found: $ENV_FILE" >&2
@@ -97,20 +66,32 @@ done
 DOCKER_PLATFORM="${FLYWAY_PLATFORM:-linux/amd64}"
 DOCKER_HOST_GATEWAY_ARG=(--add-host=host.docker.internal:host-gateway)
 
-# ── 모드별 접속 정보 설정 ──────────────────────────────────────────────────────
+# ── 확인 프롬프트 ──────────────────────────────────────────────────────────────
 
-if [[ "$PORT_FORWARD" == true ]]; then
+TARGET=$([[ "$LOCAL" == true ]] && echo "로컬 docker-compose" || echo "K8s 개발서버")
+echo ""
+echo "[${TARGET}] DB(service 스키마)와 MinIO 버킷을 V6 목업 상태로 초기화합니다."
+echo "legal_rag 스키마는 보존됩니다."
+echo ""
+read -rp "계속하시겠습니까? [y/N] " confirm
+if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+  echo "취소되었습니다."
+  exit 0
+fi
+
+# ── 모드별 접속 정보 설정 ─────────────────────────────────────────────────────
+
+if [[ "$LOCAL" == false ]]; then
   POSTGRES_HOST=localhost
   POSTGRES_PORT="$PG_LOCAL_PORT"
-  MINIO_HOST=localhost
   MINIO_PORT="$MINIO_LOCAL_PORT"
 
-  echo "[qa-reset] port-forward ${K8S_PG_SERVICE} ${PG_LOCAL_PORT}:5432 -n ${K8S_NAMESPACE}"
+  echo ""
+  echo "[qa-reset] port-forward 시작..."
   kubectl port-forward "$K8S_PG_SERVICE" "${PG_LOCAL_PORT}:5432" -n "$K8S_NAMESPACE" \
     >/tmp/skala-qa-reset-pg-pf.log 2>&1 &
   PG_PF_PID=$!
 
-  echo "[qa-reset] port-forward ${K8S_MINIO_SERVICE} ${MINIO_LOCAL_PORT}:9000 -n ${K8S_NAMESPACE}"
   kubectl port-forward "$K8S_MINIO_SERVICE" "${MINIO_LOCAL_PORT}:9000" -n "$K8S_NAMESPACE" \
     >/tmp/skala-qa-reset-minio-pf.log 2>&1 &
   MINIO_PF_PID=$!
@@ -121,10 +102,9 @@ if [[ "$PORT_FORWARD" == true ]]; then
   DOCKER_DB_HOST="host.docker.internal"
   DOCKER_MINIO_HOST="host.docker.internal"
 
-elif [[ "$LOCAL" == true ]]; then
+else
   POSTGRES_HOST="${POSTGRES_HOST:-localhost}"
   POSTGRES_PORT="${POSTGRES_PORT:-5432}"
-  MINIO_HOST="localhost"
   MINIO_PORT="${MINIO_API_PORT:-9000}"
 
   if [[ "$POSTGRES_HOST" == "localhost" || "$POSTGRES_HOST" == "127.0.0.1" ]]; then
@@ -139,8 +119,9 @@ echo ""
 echo "┌─────────────────────────────────────────────────────┐"
 echo "│              QA Reset — 초기화 시작                   │"
 echo "├─────────────────────────────────────────────────────┤"
+echo "│  대상  : ${TARGET}"
 echo "│  DB    : ${POSTGRES_USER}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}"
-echo "│  MinIO : http://${MINIO_HOST}:${MINIO_PORT}  bucket=${APP_MINIO_BUCKET}"
+echo "│  MinIO : http://localhost:${MINIO_PORT}  bucket=${APP_MINIO_BUCKET}"
 echo "│  초기화 : service 스키마 + MinIO 버킷 (legal_rag 보존)"
 echo "└─────────────────────────────────────────────────────┘"
 echo ""
