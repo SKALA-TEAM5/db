@@ -70,8 +70,9 @@ DOCKER_HOST_GATEWAY_ARG=(--add-host=host.docker.internal:host-gateway)
 
 TARGET=$([[ "$LOCAL" == true ]] && echo "로컬 docker-compose" || echo "K8s 개발서버")
 echo ""
-echo "[${TARGET}] DB(service 스키마)와 MinIO 버킷을 V6 목업 상태로 초기화합니다."
+echo "[${TARGET}] DB(service 스키마)와 MinIO projects/ 폴더를 V6 목업 상태로 초기화합니다."
 echo "legal_rag 스키마는 보존됩니다."
+echo "MinIO 버킷의 projects/ 외 데이터는 보존됩니다."
 echo ""
 read -rp "계속하시겠습니까? [y/N] " confirm
 if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
@@ -122,7 +123,7 @@ echo "├───────────────────────�
 echo "│  대상  : ${TARGET}"
 echo "│  DB    : ${POSTGRES_USER}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}"
 echo "│  MinIO : http://localhost:${MINIO_PORT}  bucket=${APP_MINIO_BUCKET}"
-echo "│  초기화 : service 스키마 + MinIO 버킷 (legal_rag 보존)"
+echo "│  초기화 : service 스키마 + MinIO projects/ (그 외 데이터 보존)"
 echo "└─────────────────────────────────────────────────────┘"
 echo ""
 
@@ -163,9 +164,9 @@ docker run --rm --platform "$DOCKER_PLATFORM" "${DOCKER_HOST_GATEWAY_ARG[@]}" \
   -e FLYWAY_LOCATIONS=filesystem:/flyway/migrations \
   flyway/flyway:10-alpine migrate
 
-# ── Step 3. MinIO 버킷 초기화 ────────────────────────────────────────────────
+# ── Step 3. MinIO projects/ 폴더 초기화 ─────────────────────────────────────
 
-echo "[qa-reset] Step 3/3  MinIO 버킷 초기화 (${APP_MINIO_BUCKET})"
+echo "[qa-reset] Step 3/3  MinIO projects/ 폴더 초기화 (${APP_MINIO_BUCKET}/projects)"
 
 docker run --rm --platform "$DOCKER_PLATFORM" "${DOCKER_HOST_GATEWAY_ARG[@]}" \
   --entrypoint /bin/sh \
@@ -173,8 +174,8 @@ docker run --rm --platform "$DOCKER_PLATFORM" "${DOCKER_HOST_GATEWAY_ARG[@]}" \
   -c "
     mc alias set target http://${DOCKER_MINIO_HOST}:${MINIO_PORT} \
       '${MINIO_ROOT_USER}' '${MINIO_ROOT_PASSWORD}' --api S3v4 &&
-    mc rm -r --force target/${APP_MINIO_BUCKET} || true &&
-    mc mb --ignore-existing target/${APP_MINIO_BUCKET}
+    mc mb --ignore-existing target/${APP_MINIO_BUCKET} &&
+    { mc rm -r --force target/${APP_MINIO_BUCKET}/projects/ || true; }
   "
 
 echo ""
