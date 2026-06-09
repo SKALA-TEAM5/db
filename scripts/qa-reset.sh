@@ -9,6 +9,11 @@ LOCAL=false
 K8S_NAMESPACE="${K8S_NAMESPACE:-skala3-finalproj-class2-team5}"
 K8S_PG_SERVICE="${K8S_PG_SERVICE:-svc/team5-postgres}"
 K8S_MINIO_SERVICE="${K8S_MINIO_SERVICE:-svc/team5-minio}"
+K8S_PG_CONFIG="${K8S_PG_CONFIG:-team5-postgres-config}"
+K8S_PG_SECRET="${K8S_PG_SECRET:-team5-postgres-secret}"
+K8S_BACKEND_SECRET="${K8S_BACKEND_SECRET:-team5-backend-secret}"
+K8S_MINIO_CONFIG="${K8S_MINIO_CONFIG:-team5-minio-config}"
+K8S_MINIO_SECRET="${K8S_MINIO_SECRET:-team5-minio-secret}"
 PG_LOCAL_PORT="${PG_LOCAL_PORT:-5433}"
 MINIO_LOCAL_PORT="${MINIO_LOCAL_PORT:-9002}"
 
@@ -23,7 +28,7 @@ Options:
   --namespace NAME      K8s 네임스페이스. Default: skala3-finalproj-class2-team5
   --pg-service NAME     K8s Postgres 서비스. Default: svc/team5-postgres
   --minio-service NAME  K8s MinIO 서비스.   Default: svc/team5-minio
-  --env-file PATH       환경변수 파일.       Default: .env
+  --env-file PATH       로컬 모드 환경변수 파일. Default: .env
 EOF
 }
 
@@ -39,15 +44,42 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ ! -f "$ENV_FILE" ]]; then
-  echo "Env file not found: $ENV_FILE" >&2
-  exit 1
-fi
+if [[ "$LOCAL" == true ]]; then
+  if [[ ! -f "$ENV_FILE" ]]; then
+    echo "Env file not found: $ENV_FILE" >&2
+    exit 1
+  fi
 
-set -a
-# shellcheck disable=SC1090
-source "$ENV_FILE"
-set +a
+  set -a
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+  set +a
+else
+  echo "[qa-reset] Kubernetes ConfigMap/Secret에서 환경값을 불러옵니다."
+
+  k8s_config_value() {
+    kubectl get configmap "$1" -n "$K8S_NAMESPACE" \
+      -o "jsonpath={.data.$2}"
+  }
+
+  k8s_secret_value() {
+    kubectl get secret "$1" -n "$K8S_NAMESPACE" \
+      -o "go-template={{ index .data \"$2\" | base64decode }}"
+  }
+
+  POSTGRES_DB="$(k8s_config_value "$K8S_PG_CONFIG" POSTGRES_DB)"
+  POSTGRES_USER="$(k8s_config_value "$K8S_PG_CONFIG" POSTGRES_USER)"
+  POSTGRES_PASSWORD="$(k8s_secret_value "$K8S_PG_SECRET" POSTGRES_PASSWORD)"
+  SERVICE_APP_USER="$(k8s_secret_value "$K8S_BACKEND_SECRET" SERVICE_APP_USER)"
+  SERVICE_APP_PASSWORD="$(k8s_secret_value "$K8S_BACKEND_SECRET" SERVICE_APP_PASSWORD)"
+  LAW_APP_USER="$(k8s_secret_value "$K8S_PG_SECRET" LAW_APP_USER)"
+  LAW_APP_PASSWORD="$(k8s_secret_value "$K8S_PG_SECRET" LAW_APP_PASSWORD)"
+  DEV_ADMIN_USER="$(k8s_secret_value "$K8S_PG_SECRET" DEV_ADMIN_USER)"
+  DEV_ADMIN_PASSWORD="$(k8s_secret_value "$K8S_PG_SECRET" DEV_ADMIN_PASSWORD)"
+  MINIO_ROOT_USER="$(k8s_secret_value "$K8S_MINIO_SECRET" MINIO_ROOT_USER)"
+  MINIO_ROOT_PASSWORD="$(k8s_secret_value "$K8S_MINIO_SECRET" MINIO_ROOT_PASSWORD)"
+  APP_MINIO_BUCKET="$(k8s_config_value "$K8S_MINIO_CONFIG" APP_MINIO_BUCKET)"
+fi
 
 required_vars=(
   POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD
