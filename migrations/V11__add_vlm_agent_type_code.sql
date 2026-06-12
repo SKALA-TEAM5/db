@@ -12,4 +12,4 @@ ALTER TABLE agent_usage_records
     DROP CONSTRAINT chk_agent_usage_records_agent_type_code;
 ALTER TABLE agent_usage_records
     ADD CONSTRAINT chk_agent_usage_records_agent_type_code
-        CHECK (agent_type_code IN ('classi', 'safety-doc', 'link', 'vision', 'legal', 'report', 'orchestrator', 'vlm'));
+        CHECK (agent_type_code IN ('classi', 'safety-doc', 'link', 'vision', 'legal', 'report', 'orchestrator', 'chatbot', 'vlm'));
