@@ -48,7 +48,10 @@ CREATE TABLE projects (
     CONSTRAINT chk_projects_contract_amount_non_negative CHECK (contract_amount >= 0),
     CONSTRAINT chk_projects_appropriated_amount_non_negative CHECK (appropriated_amount >= 0),
     CONSTRAINT chk_projects_construction_date_range CHECK (construction_end_date >= construction_start_date),
-    CONSTRAINT chk_projects_status_code CHECK (project_status_code IN ('active', 'completed', 'suspended'))
+    CONSTRAINT chk_projects_status_code CHECK (project_status_code IN ('active', 'completed', 'suspended')),
+    -- V8 편입: contract_no / project_name 고유 제약
+    CONSTRAINT uq_projects_contract_no UNIQUE (contract_no),
+    CONSTRAINT uq_projects_project_name UNIQUE (project_name)
 );
 
 CREATE TABLE refresh_tokens (
@@ -189,7 +192,7 @@ CREATE TABLE agent_logs (
     token_cumulative BIGINT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CONSTRAINT chk_agent_logs_agent_type_code CHECK (agent_type_code IN ('classi', 'safety-doc', 'link', 'vision', 'legal', 'report', 'orchestrator')),
+    CONSTRAINT chk_agent_logs_agent_type_code CHECK (agent_type_code IN ('classi', 'safety-doc', 'link', 'vision', 'legal', 'report', 'orchestrator', 'vlm')),
     CONSTRAINT chk_agent_logs_status_code CHECK (status_code IN ('pending', 'running', 'success', 'fail', 'canceled')),
     CONSTRAINT chk_agent_logs_result_code CHECK (result_code IN ('success', 'hil', 'fail'))
 );
@@ -207,7 +210,7 @@ CREATE TABLE agent_usage_records (
     created_at           TIMESTAMPTZ   NOT NULL DEFAULT now(),
 
     CONSTRAINT chk_agent_usage_records_agent_type_code
-        CHECK (agent_type_code IN ('classi', 'safety-doc', 'link', 'vision', 'legal', 'report', 'orchestrator')),
+        CHECK (agent_type_code IN ('classi', 'safety-doc', 'link', 'vision', 'legal', 'report', 'orchestrator', 'chatbot', 'vlm')),
     CONSTRAINT chk_agent_usage_records_tokens_non_negative
         CHECK (input_tokens >= 0 AND output_tokens >= 0),
     CONSTRAINT chk_agent_usage_records_cost_non_negative
@@ -297,7 +300,7 @@ ALTER TABLE agent_logs
 
 CREATE INDEX idx_projects_status_created_at ON projects (project_status_code, created_at DESC);
 CREATE INDEX idx_projects_created_at ON projects (created_at DESC);
-CREATE INDEX idx_projects_contract_no ON projects (contract_no);
+-- V8 편입: idx_projects_contract_no 는 uq_projects_contract_no(고유 인덱스)로 대체되어 제거
 
 CREATE INDEX idx_refresh_tokens_user_id ON refresh_tokens (user_id);
 CREATE INDEX idx_refresh_tokens_active_user ON refresh_tokens (user_id, expires_at) WHERE revoked_at IS NULL;
@@ -505,3 +508,106 @@ COMMENT ON COLUMN agent_logs.token_cumulative IS '누적 토큰 사용량 (재�
 COMMENT ON COLUMN agent_usage_records.input_tokens  IS '입력 토큰 수';
 COMMENT ON COLUMN agent_usage_records.output_tokens IS '출력 토큰 수';
 COMMENT ON COLUMN agent_usage_records.cost_usd      IS 'API 호출 비용 (USD), 소수점 8자리';
+
+
+-- ═════════════════════════════════════════════════════════════
+-- V9 편입: todos 읽기 모델 (+ V18 편입: evidence_type_code 컬럼)
+--   agent_logs.details JSONB 안의 payload.todos[] 를 평탄화하여 보관하는 읽기 모델.
+--   agent 실행 직후 Spring이 사용내역서 단위로 재생성(merge)한다.
+--   todo_key = sha256(usage_statement_id | agent_type_code |
+--                     usage_statement_item_id | category_code | reason)
+--   파생 데이터이므로 item/file 참조는 FK를 걸지 않는다.
+-- ═════════════════════════════════════════════════════════════
+
+CREATE TABLE service.todos (
+    id                         BIGSERIAL   PRIMARY KEY,
+    usage_statement_id         BIGINT      NOT NULL,
+    usage_statement_item_id    BIGINT,
+    usage_statement_item_name  TEXT,
+    category_code              VARCHAR(20),
+    category_name              VARCHAR(100),
+    agent_type_code            VARCHAR(20) NOT NULL,
+    file_id                    BIGINT,
+    reason                     TEXT,
+    todo_key                   VARCHAR(64) NOT NULL,
+    confirmed                  BOOLEAN     NOT NULL DEFAULT false,
+    confirmed_by               BIGINT,
+    created_at                 TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at                 TIMESTAMPTZ NOT NULL DEFAULT now(),
+    evidence_type_code         VARCHAR(50),
+    CONSTRAINT uq_todos_key UNIQUE (todo_key),
+    CONSTRAINT fk_todos_statement
+        FOREIGN KEY (usage_statement_id) REFERENCES service.usage_statements(id) ON DELETE CASCADE,
+    CONSTRAINT fk_todos_confirmed_by
+        FOREIGN KEY (confirmed_by)       REFERENCES service.users(id)            ON DELETE SET NULL
+);
+
+CREATE INDEX idx_todos_statement ON service.todos (usage_statement_id);
+
+CREATE TRIGGER trg_todos_set_updated_at
+BEFORE UPDATE ON service.todos FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+COMMENT ON TABLE  service.todos IS 'agent_logs.details JSONB의 todos[]를 평탄화한 읽기 모델 — agent 실행 직후 Spring이 statement 단위 merge';
+COMMENT ON COLUMN service.todos.todo_key IS 'TODO 식별 해시 sha256(statement_id|agent_type_code|item_id|category_code|reason). reason 변경 시 키가 바뀌어 새 TODO로 취급';
+COMMENT ON COLUMN service.todos.confirmed IS '사용자 확인(체크) 여부 — merge 시 보존됨';
+COMMENT ON COLUMN service.todos.confirmed_by IS '확인 처리한 사용자 ID';
+COMMENT ON COLUMN service.todos.evidence_type_code IS 'safety-doc TODO가 가리키는 증빙 유형 코드(evidence_types.code). 조회 시 한글 표시명으로 변환. 해당 없으면 NULL';
+
+
+-- ═════════════════════════════════════════════════════════════
+-- V17 편입: 프로젝트 목록 정렬·기간 필터 인덱스
+-- ═════════════════════════════════════════════════════════════
+
+CREATE INDEX idx_projects_construction_start_date
+    ON projects (construction_start_date);
+
+CREATE INDEX idx_projects_construction_end_date
+    ON projects (construction_end_date);
+
+CREATE INDEX idx_projects_project_name_id
+    ON projects (project_name, id DESC);
+
+CREATE INDEX idx_usage_statements_project_month_revision
+    ON usage_statements (project_id, report_month DESC, revision_no DESC);
+
+
+-- ═════════════════════════════════════════════════════════════
+-- V16 편입: 검색 trigram 인덱스 + dashboard review-needed 부분 인덱스
+--   pg_trgm 이 비표준 schema 에 설치된 환경에서도 gin_trgm_ops 가 resolve 되도록
+--   DO 블록으로 search_path 를 동적 설정한다.
+-- ═════════════════════════════════════════════════════════════
+
+DO $migration$
+DECLARE
+    ext_schema text;
+BEGIN
+    SELECT n.nspname INTO ext_schema
+    FROM pg_extension e
+    JOIN pg_namespace n ON n.oid = e.extnamespace
+    WHERE e.extname = 'pg_trgm';
+
+    IF ext_schema IS NULL THEN
+        -- 기존 체인은 V2(legal_rag)가 pg_trgm 을 legal_rag 스키마에 먼저 설치한다.
+        -- 통합 후 V1 이 먼저 실행되더라도 동일하게 legal_rag 에 설치해
+        -- 모든 trgm 인덱스의 연산자 클래스 스키마(legal_rag.gin_trgm_ops)를 일치시킨다.
+        CREATE SCHEMA IF NOT EXISTS legal_rag;
+        CREATE EXTENSION pg_trgm SCHEMA legal_rag;
+        ext_schema := 'legal_rag';
+    END IF;
+
+    EXECUTE 'SET LOCAL search_path = service, ' || quote_ident(ext_schema) || ', public, pg_catalog';
+
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_projects_project_name_trgm
+                 ON service.projects USING gin (LOWER(project_name) gin_trgm_ops)';
+
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_projects_contract_no_trgm
+                 ON service.projects USING gin (LOWER(contract_no) gin_trgm_ops)';
+
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_users_real_name_trgm
+                 ON service.users USING gin (LOWER(real_name) gin_trgm_ops)';
+END
+$migration$;
+
+CREATE INDEX IF NOT EXISTS idx_usage_statements_review_needed
+    ON service.usage_statements (project_id)
+    WHERE status_code IN ('upload_completed', 'supplement_required');

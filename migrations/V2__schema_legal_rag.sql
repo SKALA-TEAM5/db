@@ -232,8 +232,9 @@ CREATE TABLE IF NOT EXISTS law_log (
     change_type  TEXT        NOT NULL,
     changed_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
 
+    -- V15 편입: 변경 없는 배치 실행 시 sentinel 행 기록을 위해 'none' 추가
     CONSTRAINT chk_law_log_change_type
-        CHECK (change_type IN ('added', 'updated', 'deleted'))
+        CHECK (change_type IN ('added', 'updated', 'deleted', 'none'))
 );
 
 COMMENT ON TABLE  law_log IS '법령 변경 이력 — 새벽 배치 run_id 단위로 청크 변경 기록';

@@ -40,7 +40,9 @@ VALUES
     ('tech_guidance_photo', '기술지도 점검 사진', '기술지도 현장 점검 시 촬영한 사진'),
     ('usage_statement', '안전관리비 사용내역서', '월별 안전관리비 사용명세서(별지 1호 서식)'),
     ('analysis_table', '안전관리비 분석표', '착수~현재 누적 사용액 항목별 예산 현황표'),
-    ('purchase_detail', '구매 내역서', '세금계산서 발행 전 품목·수량·금액 확인 내역서')
+    ('purchase_detail', '구매 내역서', '세금계산서 발행 전 품목·수량·금액 확인 내역서'),
+    -- V10 편입: 기타 서류
+    ('other_document', '기타 서류', '위 항목에 해당하지 않는 기타 증빙서류')
 ON CONFLICT (code) DO UPDATE
 SET
     name = EXCLUDED.name,
